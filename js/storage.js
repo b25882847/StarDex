@@ -1,16 +1,22 @@
 import {
   CATALOG_COLLECTIONS,
   COLLECTIONS,
+  CRITICAL_FIELDS,
+  FIELD_DEFINITIONS,
   SCHEMA_VERSION,
   createEmptyDatabase,
+  fieldBase,
+  fieldLabel,
   parseRecordRef,
   recordRef,
   validateDatabase
 } from './schema.js';
 
-export const DATABASE_KEY = 'stardex.database.v3';
-export const FAVORITES_KEY = 'stardex.favorites.v3';
+export const DATABASE_KEY = 'stardex.database.v4';
+export const FAVORITES_KEY = 'stardex.favorites.v4';
 export const LEGACY_KEYS = {
+  databaseV3: 'stardex.database.v3',
+  favoritesV3: 'stardex.favorites.v3',
   databaseV2: 'stardex.database.v2',
   favoritesV2: 'stardex.favorites.v2',
   entries: 'stardex.user.v1',
@@ -105,6 +111,7 @@ function commonLegacy(entry, database) {
     testData: false,
     userCreated: true,
     createdAt: safeDate(entry.date || Date.now()),
+    fieldVerifications: {},
     legacyRelatedNames: splitRelated(entry.related)
   };
 }
@@ -178,7 +185,8 @@ function ensurePriceItem(database, itemName) {
     verifiedAt: null,
     testData: false,
     userCreated: true,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    fieldVerifications: {}
   });
   return id;
 }
@@ -256,7 +264,8 @@ export function migrateV2Database(database) {
   for (const collection of CATALOG_COLLECTIONS) {
     result[collection] = result[collection].map((record) => ({
       ...record,
-      verificationStatus: migrateVerificationStatus(record.verificationStatus, record.userCreated === false)
+      verificationStatus: migrateVerificationStatus(record.verificationStatus, record.userCreated === false),
+      fieldVerifications: normalizeFieldVerifications(collection, record)
     }));
   }
   result.sources = result.sources.map((source) => ({
@@ -276,6 +285,40 @@ export function migrateV2Database(database) {
   return result;
 }
 
+function verificationEntry(status, sourceIds = [], verifiedAt = '', notes = '', evidenceIds = []) {
+  return { status: migrateVerificationStatus(status), sourceIds: [...new Set(sourceIds || [])], evidenceIds: [...new Set(evidenceIds || [])], verifiedAt: text(verifiedAt, 40), notes: text(notes, 1000) };
+}
+
+function normalizeFieldVerifications(collection, record) {
+  if (record?.fieldVerifications && typeof record.fieldVerifications === 'object' && !Array.isArray(record.fieldVerifications)) return clone(record.fieldVerifications);
+  const result = {};
+  if (text(record?.name, 100)) result.name = verificationEntry(record.verificationStatus, record.sourceIds, record.verifiedAt, '由舊版整筆狀態遷移；只保守套用於名稱。');
+  return result;
+}
+
+function evidenceFieldKey(collection, evidence) {
+  const supplied = text(evidence?.fieldKey, 120);
+  if (FIELD_DEFINITIONS[collection]?.[fieldBase(supplied)]) return supplied;
+  const label = text(evidence?.field, 120).toLocaleLowerCase('zh-Hant');
+  return Object.entries(FIELD_DEFINITIONS[collection] || {}).find(([key, value]) => key.toLocaleLowerCase('zh-Hant') === label || value.toLocaleLowerCase('zh-Hant') === label)?.[0] || 'description';
+}
+
+export function migrateV3Database(database) {
+  const result = clone(database || {});
+  result.schemaVersion = SCHEMA_VERSION;
+  for (const collection of COLLECTIONS) if (!Array.isArray(result[collection])) result[collection] = [];
+  for (const collection of CATALOG_COLLECTIONS) {
+    result[collection] = result[collection].map((record) => ({ ...record, fieldVerifications: normalizeFieldVerifications(collection, record) }));
+  }
+  result.evidence = result.evidence.map((record) => {
+    const parsed = parseRecordRef(record.targetRef);
+    const fieldKey = parsed ? evidenceFieldKey(parsed.collection, record) : 'description';
+    return { ...record, fieldKey, field: record.field || (parsed ? fieldLabel(parsed.collection, fieldKey) : fieldKey) };
+  });
+  result.meta = { ...(result.meta || {}), product: 'MapleStar', locale: result.meta?.locale || 'zh-Hant', migratedFromSchema: 3, migratedAt: new Date().toISOString() };
+  return result;
+}
+
 function mergeSeedWithStored(seed, stored) {
   const merged = clone(seed);
   for (const collection of COLLECTIONS) {
@@ -285,10 +328,17 @@ function mergeSeedWithStored(seed, stored) {
       continue;
     }
     for (const record of incoming) {
-      if (record?.userCreated !== true) continue;
       const at = merged[collection].findIndex((candidate) => candidate.id === record.id);
-      if (at >= 0) merged[collection][at] = clone(record);
-      else merged[collection].push(clone(record));
+      if (record?.userCreated === true) {
+        if (at >= 0) merged[collection][at] = clone(record);
+        else merged[collection].push(clone(record));
+        continue;
+      }
+      if (at >= 0 && CATALOG_COLLECTIONS.includes(collection)) {
+        const adopted = Object.entries(record.fieldVerifications || {}).filter(([, value]) => value?.evidenceIds?.length);
+        for (const [fieldKey] of adopted) merged[collection][at][fieldBase(fieldKey)] = clone(record[fieldBase(fieldKey)]);
+        merged[collection][at].fieldVerifications = { ...(merged[collection][at].fieldVerifications || {}), ...clone(record.fieldVerifications || {}) };
+      }
     }
   }
   merged.meta = { ...merged.meta, ...stored.meta, datasetVersion: seed.meta.datasetVersion, updatedAt: seed.meta.updatedAt };
@@ -297,8 +347,9 @@ function mergeSeedWithStored(seed, stored) {
 
 export function loadAppData(seed, storage = globalThis.localStorage) {
   const stored = read(storage, DATABASE_KEY, null);
+  const v3Stored = read(storage, LEGACY_KEYS.databaseV3, null);
   const v2Stored = read(storage, LEGACY_KEYS.databaseV2, null);
-  const savedFavorites = read(storage, FAVORITES_KEY, null) ?? read(storage, LEGACY_KEYS.favoritesV2, []);
+  const savedFavorites = read(storage, FAVORITES_KEY, null) ?? read(storage, LEGACY_KEYS.favoritesV3, null) ?? read(storage, LEGACY_KEYS.favoritesV2, []);
   let database;
   let migration = { entries: 0, prices: 0, schema: null };
   let favorites = Array.isArray(savedFavorites) ? savedFavorites : [];
@@ -309,6 +360,12 @@ export function loadAppData(seed, storage = globalThis.localStorage) {
       throw new Error(`本機資料庫格式損壞：${validation.errors.slice(0, 3).join('；')}`);
     }
     database = mergeSeedWithStored(seed, stored);
+  } else if (v3Stored?.schemaVersion === 3) {
+    const migratedV3 = migrateV3Database(v3Stored);
+    const validation = validateDatabase(migratedV3, { allowTestData: true });
+    if (!validation.valid) throw new Error(`v3 本機資料無法遷移：${validation.errors.slice(0, 3).join('；')}`);
+    database = mergeSeedWithStored(seed, migratedV3);
+    migration.schema = 3;
   } else if (v2Stored?.schemaVersion === 2) {
     const migratedV2 = migrateV2Database(v2Stored);
     const validation = validateDatabase(migratedV2, { allowTestData: true });
@@ -371,6 +428,11 @@ export function parseImportPayload(raw, currentDatabase) {
   } else if (raw?.format === 'StarDexBackup' && raw.schemaVersion === SCHEMA_VERSION) {
     candidate = raw.database;
     favorites = Array.isArray(raw.favorites) ? raw.favorites : [];
+  } else if (raw?.format === 'StarDexBackup' && raw.schemaVersion === 3) {
+    candidate = migrateV3Database(raw.database);
+    favorites = Array.isArray(raw.favorites) ? raw.favorites : [];
+    migrated = true;
+    migratedFromSchema = 3;
   } else if (raw?.format === 'StarDexBackup' && raw.schemaVersion === 2) {
     candidate = migrateV2Database(raw.database);
     favorites = Array.isArray(raw.favorites) ? raw.favorites : [];
@@ -379,6 +441,11 @@ export function parseImportPayload(raw, currentDatabase) {
   } else if (raw?.schemaVersion === SCHEMA_VERSION) {
     candidate = raw;
     favorites = Array.isArray(raw.favorites) ? raw.favorites : [];
+  } else if (raw?.schemaVersion === 3) {
+    candidate = migrateV3Database(raw);
+    favorites = Array.isArray(raw.favorites) ? raw.favorites : [];
+    migrated = true;
+    migratedFromSchema = 3;
   } else if (raw?.schemaVersion === 2) {
     candidate = migrateV2Database(raw);
     favorites = Array.isArray(raw.favorites) ? raw.favorites : [];
@@ -387,7 +454,7 @@ export function parseImportPayload(raw, currentDatabase) {
   } else {
     return {
       valid: false,
-      errors: [`無法辨識的備份格式或 schema version；目前只接受 v1、schema v2 舊資料與 schema v${SCHEMA_VERSION}`],
+      errors: [`無法辨識的備份格式或 schema version；目前只接受 v1、schema v2／v3 舊資料與 schema v${SCHEMA_VERSION}`],
       warnings: []
     };
   }
@@ -430,7 +497,19 @@ export function mergeImportedData(currentDatabase, importedDatabase, currentFavo
     for (const incoming of importedDatabase[collection]) {
       const current = byId.get(incoming.id);
       if (current?.userCreated === false) {
-        if (JSON.stringify(current) !== JSON.stringify(incoming)) warnings.push(`略過 ${collection}/${incoming.id}：匯入資料不可覆寫內建條目`);
+        let restored = 0;
+        if (CATALOG_COLLECTIONS.includes(collection)) {
+          const acceptedIds = new Set((importedDatabase.evidence || []).filter((record) => record.reviewStatus === '已採用' && record.targetRef === recordRef(collection, incoming.id)).map((record) => record.id));
+          const next = clone(current);
+          for (const [fieldKey, verification] of Object.entries(incoming.fieldVerifications || {})) {
+            if (!(verification.evidenceIds || []).some((id) => acceptedIds.has(id))) continue;
+            next[fieldBase(fieldKey)] = clone(incoming[fieldBase(fieldKey)]);
+            next.fieldVerifications = { ...(next.fieldVerifications || {}), [fieldKey]: clone(verification) };
+            restored += 1;
+          }
+          if (restored) byId.set(incoming.id, next);
+        }
+        if (!restored && JSON.stringify(current) !== JSON.stringify(incoming)) warnings.push(`略過 ${collection}/${incoming.id}：匯入資料不可覆寫內建條目`);
         continue;
       }
       byId.set(incoming.id, clone(incoming));
@@ -456,7 +535,8 @@ export function createUserRecord(collection, values) {
     verifiedAt: text(values.verifiedAt, 20) || null,
     testData: Boolean(values.testData),
     userCreated: true,
-    createdAt: values.createdAt || new Date().toISOString()
+    createdAt: values.createdAt || new Date().toISOString(),
+    fieldVerifications: values.fieldVerifications || {}
   };
   const level = numberOrNull(values.level);
   switch (collection) {
@@ -479,10 +559,13 @@ export function createEvidenceRecord(values) {
   if (rawUrl && !evidenceUrl) throw new Error('證據網址只接受 http 或 https');
   const screenshotDataUrl = String(values.screenshotDataUrl || '');
   if (screenshotDataUrl.length > 2000000) throw new Error('截圖檔案過大，請壓縮至約 1.5 MB 以下');
+  const requestedField = text(values.fieldKey || values.field, 120);
+  const normalizedField = Object.values(FIELD_DEFINITIONS).flatMap((fields) => Object.entries(fields)).find(([key, label]) => key.toLocaleLowerCase('zh-Hant') === requestedField.toLocaleLowerCase('zh-Hant') || label.toLocaleLowerCase('zh-Hant') === requestedField.toLocaleLowerCase('zh-Hant'))?.[0] || requestedField;
   return {
     id: safeId(values.id || `evidence-${Date.now().toString(36)}-${hash(Math.random())}`, 'evidence'),
     targetRef: text(values.targetRef, 260),
-    field: text(values.field, 120),
+    fieldKey: normalizedField,
+    field: text(values.field, 120) || requestedField,
     claimValue: text(values.claimValue, 5000),
     evidenceType: text(values.evidenceType, 40) || '玩家填寫',
     evidenceUrl,
@@ -697,6 +780,80 @@ export function makeCsvTemplate() {
   return `\uFEFF${[headers, ...rows.map((row) => headers.map((header) => row[header] ?? ''))].map((row) => row.map(csvCell).join(',')).join('\n')}`;
 }
 
+function parseEvidenceClaim(record, fieldKey, claimValue) {
+  const field = fieldBase(fieldKey);
+  const current = record[field];
+  if (['level', 'hp', 'mp', 'experience', 'requiredLevel', 'recommendedLevel', 'maxLevel'].includes(field)) {
+    if (String(claimValue).trim() === '') return null;
+    const value = Number(claimValue);
+    if (!Number.isFinite(value) || value < 0) throw new Error('數值欄位必須是非負數');
+    return value;
+  }
+  if (Array.isArray(current)) {
+    const member = text(claimValue, 120);
+    if (!member) throw new Error('關聯或清單欄位不可空白');
+    return [...new Set([...current, member])];
+  }
+  if (current && typeof current === 'object') {
+    let value;
+    try { value = JSON.parse(claimValue); } catch { throw new Error('物件欄位請提供有效 JSON'); }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('物件欄位必須是 JSON 物件');
+    return { ...current, ...value };
+  }
+  return text(claimValue, 5000);
+}
+
+export function reviewEvidence(database, evidenceId, reviewStatus, reviewNotes = '') {
+  const result = clone(database);
+  const evidence = result.evidence.find((record) => record.id === evidenceId);
+  if (!evidence) throw new Error('找不到證據');
+  if (!['已採用', '已拒絕'].includes(reviewStatus)) throw new Error('不支援的審核狀態');
+  const parsed = parseRecordRef(evidence.targetRef);
+  const target = parsed ? result[parsed.collection].find((record) => record.id === parsed.id) : null;
+  if (!target) throw new Error('證據目標不存在');
+  evidence.reviewStatus = reviewStatus;
+  evidence.reviewNotes = text(reviewNotes, 1000);
+  evidence.reviewedAt = new Date().toISOString();
+  if (reviewStatus === '已採用') {
+    const base = fieldBase(evidence.fieldKey);
+    const value = parseEvidenceClaim(target, evidence.fieldKey, evidence.claimValue);
+    target[base] = value;
+    const member = Array.isArray(value) ? text(evidence.claimValue, 120) : '';
+    const key = member ? `${base}:${member}` : base;
+    const previous = target.fieldVerifications?.[key] || {};
+    target.fieldVerifications = { ...(target.fieldVerifications || {}), [key]: verificationEntry('玩家證據已驗證', evidence.sourceId ? [evidence.sourceId] : previous.sourceIds, evidence.reviewedAt.slice(0, 10), evidence.reviewNotes, [...(previous.evidenceIds || []), evidence.id]) };
+    if (target.userCreated) target.verificationStatus = '玩家證據已驗證';
+  }
+  const validation = validateDatabase(result, { allowTestData: true });
+  if (!validation.valid) throw new Error(`採用後資料無效：${validation.errors[0]}`);
+  return result;
+}
+
+function meaningful(value) {
+  if (value === null || value === undefined || value === '') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return !['待驗證', '未知', '未分類'].includes(String(value).trim());
+}
+
+function fieldState(record, field) {
+  const entries = Object.entries(record.fieldVerifications || {}).filter(([key]) => fieldBase(key) === field);
+  const isVerified = (value) => ['官方已確認', '玩家證據已驗證'].includes(value?.status);
+  const hasTrace = (value) => (value?.sourceIds?.length || 0) + (value?.evidenceIds?.length || 0) > 0;
+  const base = record.fieldVerifications?.[field];
+  let verified = isVerified(base);
+  let sourced = hasTrace(base);
+  if (Array.isArray(record[field]) && record[field].length) {
+    const memberEntries = record[field].map((id) => record.fieldVerifications?.[`${field}:${id}`]);
+    verified ||= memberEntries.every(isVerified);
+    sourced ||= memberEntries.every(hasTrace);
+  } else if (!Array.isArray(record[field])) {
+    verified ||= entries.some(([, value]) => isVerified(value));
+    sourced ||= entries.some(([, value]) => hasTrace(value));
+  }
+  return { filled: meaningful(record[field]), verified, sourced };
+}
+
 export function databaseStats(database) {
   const statuses = Object.fromEntries(['官方已確認', '玩家證據已驗證', '待驗證', '測試資料'].map((status) => [status, 0]));
   const collections = {};
@@ -709,7 +866,19 @@ export function databaseStats(database) {
       if (statuses[status] !== undefined) statuses[status] += 1;
       total += 1;
     }
-    collections[collection] = { total: database[collection]?.length || 0, statuses: collectionStatuses };
+    const critical = { total: 0, filled: 0, verified: 0, missing: 0, missingSource: 0 };
+    for (const record of (database[collection] || []).filter((entry) => !entry.testData)) {
+      for (const field of CRITICAL_FIELDS[collection] || []) {
+        const state = fieldState(record, field);
+        critical.total += 1;
+        if (state.filled) critical.filled += 1; else critical.missing += 1;
+        if (state.filled && state.verified) critical.verified += 1;
+        if (state.filled && !state.sourced) critical.missingSource += 1;
+      }
+    }
+    critical.completenessRatio = critical.total ? Math.round(critical.filled / critical.total * 1000) / 10 : 0;
+    critical.verifiedRatio = critical.total ? Math.round(critical.verified / critical.total * 1000) / 10 : 0;
+    collections[collection] = { total: database[collection]?.length || 0, statuses: collectionStatuses, critical };
   }
   const verified = statuses['官方已確認'] + statuses['玩家證據已驗證'];
   const formalTotal = total - statuses['測試資料'];
@@ -720,6 +889,15 @@ export function databaseStats(database) {
     if (record.reviewStatus === '已採用') evidence.accepted += 1;
     if (record.reviewStatus === '已拒絕') evidence.rejected += 1;
   }
+  const levelCoverage = Array.from({ length: 6 }, (_, index) => {
+    const min = index * 10 + 1;
+    const max = min + 9;
+    const rows = (database.monsters || []).filter((record) => record.level >= min && record.level <= max && !record.testData);
+    return { min, max, total: rows.length, verified: rows.filter((record) => fieldState(record, 'level').verified).length };
+  });
+  const dropRelations = (database.monsters || []).flatMap((record) => (record.dropItemIds || []).map((id) => ({ record, id })));
+  const verifiedDropRelations = dropRelations.filter(({ record, id }) => fieldState(record, `dropItemIds:${id}`).verified || record.fieldVerifications?.[`dropItemIds:${id}`]?.status === '官方已確認').length;
+  const priorities = CATALOG_COLLECTIONS.flatMap((collection) => (database[collection] || []).filter((record) => !record.testData).map((record) => ({ collection, id: record.id, name: record.name, missing: (CRITICAL_FIELDS[collection] || []).filter((field) => !fieldState(record, field).verified).length }))).filter((row) => row.missing).sort((a, b) => b.missing - a.missing || a.name.localeCompare(b.name, 'zh-Hant')).slice(0, 12);
   return {
     total,
     formalTotal,
@@ -728,6 +906,10 @@ export function databaseStats(database) {
     statuses,
     collections,
     evidence,
+    levelCoverage,
+    drops: { totalRelations: dropRelations.length, verifiedRelations: verifiedDropRelations, monstersWithDrops: (database.monsters || []).filter((record) => record.dropItemIds?.length).length },
+    priorities,
+    latestUpdatedAt: database.meta?.updatedAt || '',
     rawCounts: Object.fromEntries(COLLECTIONS.map((collection) => [collection, database[collection]?.length || 0]))
   };
 }

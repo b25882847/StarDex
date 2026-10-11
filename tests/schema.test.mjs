@@ -19,13 +19,15 @@ import {
   mergeImportedData,
   migrateLegacyPayload,
   migrateV2Database,
+  migrateV3Database,
   parseCsvImport,
-  parseImportPayload
+  parseImportPayload,
+  reviewEvidence
 } from '../js/storage.js';
 
 const seed = JSON.parse(fs.readFileSync(new URL('../data/maplestar.seed.json', import.meta.url), 'utf8'));
 
-test('內建 schema v3 資料通過完整驗證', () => {
+test('內建 schema v4 資料通過完整驗證', () => {
   const result = validateDatabase(seed, { allowTestData: true });
   assert.equal(result.valid, true, result.errors.join('\n'));
 });
@@ -146,7 +148,7 @@ test('舊版自建條目、價格與收藏可遷移且不依賴中文名稱作�
   assert.equal(validateDatabase(migrated.database, { allowTestData: true }).valid, true);
 });
 
-test('可辨識 v1 備份並遷移到 v3', () => {
+test('可辨識 v1 備份並遷移到 v4', () => {
   const result = parseImportPayload({ format: 'StarDexBackup', version: 1, entries: [], prices: [], favorites: [] }, seed);
   assert.equal(result.valid, true);
   assert.equal(result.migrated, true);
@@ -354,4 +356,87 @@ test('統計排除測試資料並分列四種驗證狀態', () => {
   assert.equal(stats.total, stats.formalTotal + 1);
   assert.equal(stats.statuses['測試資料'], 1);
   assert.equal(stats.formalTotal, seed.monsters.length + seed.items.length + seed.maps.length + seed.npcs.length + seed.jobs.length + seed.skills.length + seed.quests.length + seed.bosses.length + seed.guides.length);
+});
+
+test('schema v3 可升級至 v4 並保留條目、價格、證據與欄位名稱', () => {
+  const v3 = clone(seed);
+  v3.schemaVersion = 3;
+  for (const collection of ['monsters', 'items', 'maps', 'npcs', 'jobs', 'skills', 'quests', 'bosses', 'guides']) {
+    for (const record of v3[collection]) delete record.fieldVerifications;
+  }
+  const evidence = createEvidenceRecord({ id: 'evidence-v3', targetRef: 'monsters:monster-cloud-fox', field: 'HP', claimValue: '123', evidenceType: '遊戲內截圖', reporterAlias: '遷移玩家', observedAt: '2026-10-10' });
+  delete evidence.fieldKey;
+  v3.evidence.push(evidence);
+  const migrated = migrateV3Database(v3);
+  assert.equal(migrated.schemaVersion, SCHEMA_VERSION);
+  assert.equal(migrated.evidence[0].fieldKey, 'hp');
+  assert.ok(migrated.monsters[0].fieldVerifications.name);
+  assert.equal(validateDatabase(migrated, { allowTestData: true }).valid, true);
+});
+
+test('採用玩家證據後才更新指定欄位與欄位級來源', () => {
+  const database = clone(seed);
+  database.evidence.push(createEvidenceRecord({ id: 'evidence-hp-accepted', targetRef: 'monsters:monster-cloud-fox', fieldKey: 'hp', field: 'HP', claimValue: '123', evidenceType: '遊戲內截圖', reporterAlias: '玩家甲', observedAt: '2026-10-10' }));
+  assert.equal(database.monsters[0].hp, null);
+  const reviewed = reviewEvidence(database, 'evidence-hp-accepted', '已採用', '已人工核對截圖');
+  assert.equal(reviewed.monsters[0].hp, 123);
+  assert.equal(reviewed.monsters[0].fieldVerifications.hp.status, '玩家證據已驗證');
+  assert.deepEqual(reviewed.monsters[0].fieldVerifications.hp.evidenceIds, ['evidence-hp-accepted']);
+});
+
+test('衝突證據保留雙方紀錄且拒絕時不改寫欄位', () => {
+  const database = clone(seed);
+  database.evidence.push(createEvidenceRecord({ id: 'evidence-level-a', targetRef: 'monsters:monster-cloud-fox', fieldKey: 'level', field: '等級', claimValue: '20', evidenceType: '玩家填寫', reporterAlias: '玩家甲', observedAt: '2026-10-10' }));
+  database.evidence.push(createEvidenceRecord({ id: 'evidence-level-b', targetRef: 'monsters:monster-cloud-fox', fieldKey: 'level', field: '等級', claimValue: '21', evidenceType: '遊戲內截圖', reporterAlias: '玩家乙', observedAt: '2026-10-10' }));
+  const accepted = reviewEvidence(database, 'evidence-level-a', '已採用', '採用 A');
+  const rejected = reviewEvidence(accepted, 'evidence-level-b', '已拒絕', '畫面不清楚');
+  assert.equal(rejected.monsters[0].level, 20);
+  assert.equal(rejected.evidence.length, 2);
+  assert.deepEqual(rejected.evidence.map((record) => record.reviewStatus).sort(), ['已拒絕', '已採用']);
+});
+
+test('完整度不會只因有名稱就判定完成', () => {
+  const stats = databaseStats(seed);
+  assert.ok(stats.collections.monsters.critical.completenessRatio < 100);
+  assert.ok(stats.collections.monsters.critical.verifiedRatio < stats.collections.monsters.critical.completenessRatio);
+  assert.equal(stats.levelCoverage.reduce((sum, row) => sum + row.total, 0), 0);
+});
+
+test('本期新增官方條目與職業技能關聯存在', () => {
+  assert.equal(seed.jobs.length, 15);
+  assert.equal(seed.skills.find((record) => record.id === 'skill-mechanic-rocket-booster').jobId, 'job-mechanic');
+  assert.ok(seed.jobs.find((record) => record.id === 'job-mechanic').skillIds.includes('skill-mechanic-rocket-booster'));
+  assert.equal(seed.quests.find((record) => record.id === 'quest-hungry-roni').fieldVerifications.name.status, '官方已確認');
+});
+
+test('首次載入 v3 localStorage 保留收藏、價格、證據與自建內容', () => {
+  const v3 = clone(seed);
+  v3.schemaVersion = 3;
+  for (const collection of ['monsters', 'items', 'maps', 'npcs', 'jobs', 'skills', 'quests', 'bosses', 'guides']) for (const record of v3[collection]) delete record.fieldVerifications;
+  const custom = clone(v3.items[0]);
+  custom.id = 'item-user-v3-preserved'; custom.name = 'v3 保留物品'; custom.userCreated = true; custom.verificationStatus = '待驗證';
+  v3.items.push(custom);
+  v3.prices.push({ id: 'price-v3-preserved', itemId: custom.id, server: '玩家服', price: 456, recordedAt: '2026-10-10T00:00:00.000Z', dataSource: '手動', notes: '', sourceId: null, userCreated: true });
+  const evidence = createEvidenceRecord({ id: 'evidence-v3-preserved', targetRef: `items:${custom.id}`, field: '取得方式', claimValue: '畫面顯示', evidenceType: '遊戲內截圖', reporterAlias: '玩家甲', observedAt: '2026-10-10' });
+  delete evidence.fieldKey;
+  v3.evidence.push(evidence);
+  const values = new Map([[LEGACY_KEYS.databaseV3, JSON.stringify(v3)], [LEGACY_KEYS.favoritesV3, JSON.stringify([`items:${custom.id}`])]]);
+  const storage = { getItem: (key) => values.has(key) ? values.get(key) : null, setItem: (key, value) => values.set(key, value) };
+  const loaded = loadAppData(seed, storage);
+  assert.equal(loaded.migration.schema, 3);
+  assert.ok(loaded.database.items.some((record) => record.id === custom.id));
+  assert.ok(loaded.database.prices.some((record) => record.id === 'price-v3-preserved'));
+  assert.ok(loaded.database.evidence.some((record) => record.id === 'evidence-v3-preserved'));
+  assert.deepEqual(loaded.favorites, [`items:${custom.id}`]);
+  assert.ok(values.has(LEGACY_KEYS.databaseV3));
+});
+
+test('完整備份還原時保留已採用於內建條目的欄位證據', () => {
+  const withEvidence = clone(seed);
+  withEvidence.evidence.push(createEvidenceRecord({ id: 'evidence-backup-hp', targetRef: 'monsters:monster-cloud-fox', fieldKey: 'hp', field: 'HP', claimValue: '321', evidenceType: '遊戲內截圖', reporterAlias: '玩家甲', observedAt: '2026-10-10' }));
+  const reviewed = reviewEvidence(withEvidence, 'evidence-backup-hp', '已採用', '人工核對');
+  const restored = mergeImportedData(seed, reviewed, [], []);
+  const monster = restored.database.monsters.find((record) => record.id === 'monster-cloud-fox');
+  assert.equal(monster.hp, 321);
+  assert.equal(monster.fieldVerifications.hp.status, '玩家證據已驗證');
 });

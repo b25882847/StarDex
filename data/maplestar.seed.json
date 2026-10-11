@@ -1,10 +1,10 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "meta": {
     "product": "MapleStar",
     "locale": "zh-Hant",
-    "datasetVersion": "2026.10.11.2",
-    "updatedAt": "2026-10-11T00:00:00+08:00",
+    "datasetVersion": "2026.10.11.3",
+    "updatedAt": "2026-10-11T12:00:00+08:00",
     "notice": "僅收錄楓星 MapleStar 資料。空值代表尚未取得可信資料；待驗證內容不可視為確定數值。"
   },
   "monsters": [
@@ -23,7 +23,12 @@
       "verificationStatus": "待驗證",
       "verifiedAt": "2026-10-11",
       "testData": false,
-      "userCreated": false
+      "userCreated": false,
+      "fieldVerifications": {
+        "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" },
+        "dropItemIds:item-cloud-fox-tail": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "公告確認雲狐應掉落雲狐尾巴；掉落率未知。" },
+        "mapIds:map-mushroom-shrine-vicinity": { "status": "待驗證", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "公告只提及菇菇神社周邊，尚缺具體地圖截圖。" }
+      }
     },
     {
       "id": "monster-flame-slime",
@@ -92,6 +97,11 @@
       "verifiedAt": "2026-10-11",
       "testData": false,
       "userCreated": false
+    },
+    {
+      "id": "monster-short-tusk-seal", "name": "短牙海豹", "level": null, "hp": null, "mp": null, "experience": null, "elements": [], "mapIds": [], "dropItemIds": [],
+      "description": "8 月 13 日官方更新提及此怪物；等級、出沒地圖、數值與掉落物未公開。", "sourceIds": ["source-update-2026-08-13"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false,
+      "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-08-13"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } }
     }
   ],
   "items": [
@@ -274,7 +284,14 @@
       "verifiedAt": "2026-10-11",
       "testData": false,
       "userCreated": false
-    }
+    },
+    { "id": "item-high-performance-megaphone", "name": "高效能喇叭", "category": "消耗品", "requiredLevel": null, "stats": {}, "acquisition": "官方公告列為 2026 年 5 月 14 日伺服器不穩定補償 3 個；一般取得方式待驗證。", "tradeInfo": "待驗證", "description": "效果與交易限制未由本來源公開。", "sourceIds": ["source-compensation-2026-05-10"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方補償清單。" }, "acquisition": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "僅確認該次補償取得。" } } },
+    { "id": "item-cute-party-bear", "name": "可愛派對熊", "category": "消耗品", "requiredLevel": null, "stats": {}, "acquisition": "官方公告列為 2026 年 5 月 14 日伺服器不穩定補償 5 個；一般取得方式待驗證。", "tradeInfo": "待驗證", "description": "效果與交易限制未由本來源公開。", "sourceIds": ["source-compensation-2026-05-10"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方補償清單。" }, "acquisition": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "僅確認該次補償取得。" } } },
+    { "id": "item-safety-charm", "name": "護身符", "category": "消耗品", "requiredLevel": null, "stats": {}, "acquisition": "官方公告列為 2026 年 5 月 14 日伺服器不穩定補償 9 個；一般取得方式待驗證。", "tradeInfo": "待驗證", "description": "效果與交易限制未由本來源公開。", "sourceIds": ["source-compensation-2026-05-10"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方補償清單。" }, "acquisition": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "僅確認該次補償取得。" } } },
+    { "id": "item-instant-revival", "name": "原地復活術", "category": "消耗品", "requiredLevel": null, "stats": {}, "acquisition": "官方公告列為 2026 年 5 月 14 日伺服器不穩定補償 9 個；一般取得方式待驗證。", "tradeInfo": "待驗證", "description": "效果與交易限制未由本來源公開。", "sourceIds": ["source-compensation-2026-05-10"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方補償清單。" }, "acquisition": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "僅確認該次補償取得。" } } },
+    { "id": "item-hyper-teleport-rock", "name": "瞬間移動世界地圖", "category": "消耗品", "requiredLevel": null, "stats": {}, "acquisition": "官方公告列為 2026 年 5 月 14 日伺服器不穩定補償 15 個；一般取得方式待驗證。", "tradeInfo": "待驗證", "description": "效果與交易限制未由本來源公開。", "sourceIds": ["source-compensation-2026-05-10"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方補償清單。" }, "acquisition": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "僅確認該次補償取得。" } } },
+    { "id": "item-ap-reset-scroll", "name": "AP初始化卷軸", "category": "消耗品", "requiredLevel": null, "stats": {}, "acquisition": "官方公告列為 2026 年 5 月 14 日伺服器不穩定補償；數量與一般取得方式未在公告明列。", "tradeInfo": "待驗證", "description": "效果與交易限制未由本來源公開。", "sourceIds": ["source-compensation-2026-05-10"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方補償清單。" }, "acquisition": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "僅確認該次補償取得。" } } },
+    { "id": "item-sp-reset-scroll", "name": "SP初始化卷軸", "category": "消耗品", "requiredLevel": null, "stats": {}, "acquisition": "官方公告列為 2026 年 5 月 14 日伺服器不穩定補償；數量與一般取得方式未在公告明列。", "tradeInfo": "待驗證", "description": "效果與交易限制未由本來源公開。", "sourceIds": ["source-compensation-2026-05-10"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方補償清單。" }, "acquisition": { "status": "官方已確認", "sourceIds": ["source-compensation-2026-05-10"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "僅確認該次補償取得。" } } }
   ],
   "maps": [
     {
@@ -574,7 +591,17 @@
       "verifiedAt": "2026-10-11",
       "testData": false,
       "userCreated": false
-    }
+    },
+    { "id": "job-adventurer", "name": "冒險家", "advancementStages": [], "weapons": [], "features": "官方公開測試列為開放職業；分支、轉職與武器待遊戲內證據。", "skillIds": [], "trainingGuideIds": [], "sourceIds": ["source-public-test-guide"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-public-test-guide"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方開放職業清單。" } } },
+    { "id": "job-cygnus-knights", "name": "皇家騎士團", "advancementStages": [], "weapons": [], "features": "官方公開測試列為開放職業。", "skillIds": [], "trainingGuideIds": [], "sourceIds": ["source-public-test-guide"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-public-test-guide"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方開放職業清單。" } } },
+    { "id": "job-dual-blade", "name": "影武者", "advancementStages": [], "weapons": [], "features": "官方公開測試列為開放職業。", "skillIds": [], "trainingGuideIds": [], "sourceIds": ["source-public-test-guide"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-public-test-guide"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方開放職業清單。" } } },
+    { "id": "job-aran", "name": "狂狼勇士", "advancementStages": [], "weapons": [], "features": "官方公開測試列為開放職業。", "skillIds": [], "trainingGuideIds": [], "sourceIds": ["source-public-test-guide"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-public-test-guide"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方開放職業清單。" } } },
+    { "id": "job-evan", "name": "龍魔導士", "advancementStages": [], "weapons": [], "features": "官方公開測試列為開放職業。", "skillIds": [], "trainingGuideIds": [], "sourceIds": ["source-public-test-guide"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-public-test-guide"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方開放職業清單。" } } },
+    { "id": "job-battle-mage", "name": "煉獄巫師", "advancementStages": [], "weapons": [], "features": "官方公開測試列為開放職業。", "skillIds": [], "trainingGuideIds": [], "sourceIds": ["source-public-test-guide"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-public-test-guide"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方開放職業清單。" } } },
+    { "id": "job-mechanic", "name": "機甲戰神", "advancementStages": [], "weapons": [], "features": "官方公開測試列為開放職業。", "skillIds": ["skill-mechanic-rocket-booster"], "trainingGuideIds": [], "sourceIds": ["source-public-test-guide", "source-update-2026-05-21"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-public-test-guide"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方開放職業清單。" }, "skillIds:skill-mechanic-rocket-booster": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方技能歸屬。" } } },
+    { "id": "job-wild-hunter", "name": "狂豹獵人", "advancementStages": [], "weapons": [], "features": "官方公開測試列為開放職業。", "skillIds": ["skill-wild-hunter-wild-vulcan"], "trainingGuideIds": [], "sourceIds": ["source-public-test-guide", "source-update-2026-05-21"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-public-test-guide"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方開放職業清單。" }, "skillIds:skill-wild-hunter-wild-vulcan": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方技能歸屬。" } } },
+    { "id": "job-cannoneer", "name": "重砲指揮官", "advancementStages": [], "weapons": [], "features": "官方公開測試列為開放職業。", "skillIds": ["skill-cannoneer-monkey-impact"], "trainingGuideIds": [], "sourceIds": ["source-public-test-guide", "source-update-2026-05-21"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-public-test-guide"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方開放職業清單。" }, "skillIds:skill-cannoneer-monkey-impact": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方技能歸屬。" } } },
+    { "id": "job-kanna", "name": "陰陽師", "advancementStages": [], "weapons": [], "features": "官方公開測試列為開放職業。", "skillIds": [], "trainingGuideIds": [], "sourceIds": ["source-public-test-guide"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-public-test-guide"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方開放職業清單。" } } }
   ],
   "skills": [
     {
@@ -646,7 +673,10 @@
       "verifiedAt": "2026-10-11",
       "testData": false,
       "userCreated": false
-    }
+    },
+    { "id": "skill-mechanic-rocket-booster", "name": "火箭極速", "jobId": "job-mechanic", "description": "5 月 21 日官方公告提及此技能的位置異常修正；效果與數值未公開。", "maxLevel": null, "prerequisiteSkillIds": [], "recommendedBuild": "待遊戲內證據。", "sourceIds": ["source-update-2026-05-21"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方公告直接列名。" }, "jobId": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方技能歸屬。" } } },
+    { "id": "skill-wild-hunter-wild-vulcan", "name": "狂野帕爾坎", "jobId": "job-wild-hunter", "description": "5 月 21 日官方公告提及此技能的特效位置修正；效果與數值未公開。", "maxLevel": null, "prerequisiteSkillIds": [], "recommendedBuild": "待遊戲內證據。", "sourceIds": ["source-update-2026-05-21"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方公告直接列名。" }, "jobId": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方技能歸屬。" } } },
+    { "id": "skill-cannoneer-monkey-impact", "name": "猴子衝擊", "jobId": "job-cannoneer", "description": "5 月 21 日官方公告提及最高輸出模式增益修正；效果與數值未公開。", "maxLevel": null, "prerequisiteSkillIds": [], "recommendedBuild": "待遊戲內證據。", "sourceIds": ["source-update-2026-05-21"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方公告直接列名。" }, "jobId": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-21"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方技能歸屬。" } } }
   ],
   "quests": [
     {
@@ -808,7 +838,19 @@
       "verifiedAt": "2026-10-11",
       "testData": false,
       "userCreated": false
-    }
+    },
+    { "id": "quest-make-potion", "name": "製作藥劑", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "5 月 12 日官方更新確認此任務與特定道具掉落；條件、道具與獎勵未公開。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-hungry-roni", "name": "饑餓的洛尼", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-special-grilled-eel-secret", "name": "特製烤鰻魚的秘密", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-icarus-flying-pill", "name": "伊卡路斯和飛行藥", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-nella-dream", "name": "內拉的夢", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-panxi-red-furball", "name": "潘喜的紅色毛球", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-warrior-test", "name": "勇士的考試", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-colored-mushroom-spores-2", "name": "彩色菇菇芽孢（2）", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-colored-mushroom-spores-3", "name": "彩色菇菇芽孢（3）", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-penguin-king-order", "name": "企鵝國王的訂單", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-dual-blade-awakening", "name": "影武者－覺醒之時", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } },
+    { "id": "quest-shattered-black-crystal", "name": "碎裂的黑水晶", "requiredLevel": null, "npcIds": [], "prerequisiteQuestIds": [], "requiredItemIds": [], "rewardItemIds": [], "rewardsText": "待驗證", "description": "官方更新確認任務存在並修正目標文字；實際流程與獎勵待驗證。", "sourceIds": ["source-update-2026-05-12"], "verificationStatus": "待驗證", "verifiedAt": "2026-10-11", "testData": false, "userCreated": false, "fieldVerifications": { "name": { "status": "官方已確認", "sourceIds": ["source-update-2026-05-12"], "evidenceIds": [], "verifiedAt": "2026-10-11", "notes": "官方更新直接列名。" } } }
   ],
   "bosses": [
     {
@@ -1176,6 +1218,28 @@
   "prices": [],
   "evidence": [],
   "sources": [
+    {
+      "id": "source-compensation-2026-05-10",
+      "name": "楓星伺服器不穩定補償發放公告",
+      "url": "https://tw.maplestar.io/news/notices/0de760cd-41f3-42a9-b2fd-f1a88f677c91",
+      "version": "2026-05-10",
+      "checkedAt": "2026-10-11",
+      "verificationStatus": "官方已確認",
+      "notes": "已核對官方公告；只記錄公告明列的補償道具與數量，不推定一般取得方式、效果或交易限制。",
+      "sourceType": "楓星官方",
+      "userCreated": false
+    },
+    {
+      "id": "source-update-2026-05-12",
+      "name": "楓星 5月12日更新內容",
+      "url": "https://tw.maplestar.io/news/updates/5e067fb1-4dae-4abe-9e13-6e5acb3643fd",
+      "version": "2026-05-12",
+      "checkedAt": "2026-10-11",
+      "verificationStatus": "官方已確認",
+      "notes": "已核對官方頁面公開內容；只收錄公告直接列出的任務名稱，不推定等級、NPC、流程或獎勵。",
+      "sourceType": "楓星官方",
+      "userCreated": false
+    },
     {
       "id": "source-update-2026-05-21",
       "name": "楓星 5月21日更新內容",

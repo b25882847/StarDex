@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const COLLECTIONS = [
   'monsters',
@@ -46,6 +46,38 @@ export const VERIFICATION_STATUSES = ['官方已確認', '玩家證據已驗證'
 export const SOURCE_TYPES = ['楓星官方', '玩家證據', '其他公開資訊'];
 export const EVIDENCE_TYPES = ['遊戲內截圖', '玩家填寫', '其他公開資料'];
 export const EVIDENCE_STATUSES = ['待審核', '已採用', '已拒絕'];
+
+export const FIELD_DEFINITIONS = {
+  monsters: { name: '名稱', level: '等級', hp: 'HP', mp: 'MP', experience: '經驗值', elements: '屬性', mapIds: '出沒地圖', dropItemIds: '掉落物', description: '說明' },
+  items: { name: '名稱', category: '分類', requiredLevel: '需求等級', stats: '能力值', acquisition: '取得方式', tradeInfo: '交易資訊', description: '說明' },
+  maps: { name: '名稱', region: '區域', recommendedLevel: '建議等級', adjacentMapIds: '相鄰地圖', monsterIds: '怪物', npcIds: 'NPC', description: '說明' },
+  npcs: { name: '名稱', mapIds: '所在地圖', description: '說明' },
+  jobs: { name: '名稱', advancementStages: '轉職階段', weapons: '武器', features: '特色', skillIds: '技能', trainingGuideIds: '練功攻略' },
+  skills: { name: '名稱', jobId: '所屬職業', description: '技能效果', maxLevel: '技能等級', prerequisiteSkillIds: '前置技能', recommendedBuild: '推薦配點' },
+  quests: { name: '名稱', requiredLevel: '等級要求', npcIds: 'NPC', prerequisiteQuestIds: '前置任務', requiredItemIds: '需求道具', rewardItemIds: '獎勵道具', rewardsText: '獎勵說明', description: '流程／條件' },
+  bosses: { name: '名稱', level: '等級', entryConditions: '進入條件', entryMapIds: '進入地圖', requiredQuestIds: '前置任務', dropItemIds: '掉落物', respawnOrLimits: '重生／限制', description: '說明' },
+  guides: { name: '名稱', guideType: '攻略類型', levelRange: '等級範圍', jobIds: '職業', mapIds: '地圖', itemIds: '物品', content: '內容' }
+};
+
+export const CRITICAL_FIELDS = {
+  monsters: ['name', 'level', 'mapIds', 'dropItemIds'],
+  items: ['name', 'category', 'requiredLevel', 'acquisition'],
+  maps: ['name', 'region', 'monsterIds', 'npcIds', 'adjacentMapIds'],
+  npcs: ['name', 'mapIds'],
+  jobs: ['name', 'advancementStages', 'weapons', 'skillIds'],
+  skills: ['name', 'jobId', 'description', 'maxLevel', 'prerequisiteSkillIds'],
+  quests: ['name', 'requiredLevel', 'npcIds', 'description', 'rewardItemIds'],
+  bosses: ['name', 'level', 'entryConditions', 'entryMapIds', 'dropItemIds', 'respawnOrLimits'],
+  guides: ['name', 'guideType', 'content']
+};
+
+export function fieldBase(fieldKey) {
+  return String(fieldKey || '').split(':')[0];
+}
+
+export function fieldLabel(collection, fieldKey) {
+  return FIELD_DEFINITIONS[collection]?.[fieldBase(fieldKey)] || fieldKey || '其他／待分類';
+}
 
 export const REFERENCE_RULES = {
   monsters: {
@@ -167,7 +199,7 @@ function validateRecordShape(collection, record, path, errors) {
     bosses: ['description', 'entryConditions', 'respawnOrLimits'],
     guides: ['guideType', 'content'],
     prices: ['server', 'recordedAt', 'dataSource', 'notes'],
-    evidence: ['targetRef', 'field', 'claimValue', 'evidenceType', 'evidenceUrl', 'screenshotDataUrl', 'reporterAlias', 'observedAt', 'submittedAt', 'reviewStatus', 'reviewNotes', 'reviewedAt'],
+    evidence: ['targetRef', 'fieldKey', 'field', 'claimValue', 'evidenceType', 'evidenceUrl', 'screenshotDataUrl', 'reporterAlias', 'observedAt', 'submittedAt', 'reviewStatus', 'reviewNotes', 'reviewedAt'],
     sources: ['name', 'url', 'version', 'checkedAt', 'verificationStatus', 'notes', 'sourceType']
   }[collection] || [];
   for (const field of stringFields) {
@@ -193,6 +225,25 @@ function validateRecordShape(collection, record, path, errors) {
   if (!['prices', 'sources', 'evidence'].includes(collection)) {
     if (typeof record.testData !== 'boolean') pushError(errors, `${path}.testData`, '必須是布林值');
     if (typeof record.userCreated !== 'boolean') pushError(errors, `${path}.userCreated`, '必須是布林值');
+    if (record.fieldVerifications === undefined) {
+      // schema v3 內建條目可在 v4 漸進補上欄位級狀態；缺少時視為尚未驗證。
+    } else if (!isPlainObject(record.fieldVerifications)) {
+      pushError(errors, `${path}.fieldVerifications`, '必須是物件');
+    } else {
+      for (const [fieldKey, verification] of Object.entries(record.fieldVerifications)) {
+        const base = fieldBase(fieldKey);
+        if (!FIELD_DEFINITIONS[collection]?.[base]) pushError(errors, `${path}.fieldVerifications.${fieldKey}`, '不是此分類可驗證的欄位');
+        if (!isPlainObject(verification)) {
+          pushError(errors, `${path}.fieldVerifications.${fieldKey}`, '必須是物件');
+          continue;
+        }
+        if (!VERIFICATION_STATUSES.includes(verification.status)) pushError(errors, `${path}.fieldVerifications.${fieldKey}.status`, '驗證狀態無效');
+        validateStringArray(verification.sourceIds, `${path}.fieldVerifications.${fieldKey}.sourceIds`, errors);
+        validateStringArray(verification.evidenceIds, `${path}.fieldVerifications.${fieldKey}.evidenceIds`, errors);
+        if (typeof verification.verifiedAt !== 'string') pushError(errors, `${path}.fieldVerifications.${fieldKey}.verifiedAt`, '必須是字串');
+        if (typeof verification.notes !== 'string') pushError(errors, `${path}.fieldVerifications.${fieldKey}.notes`, '必須是字串');
+      }
+    }
   }
 }
 
@@ -228,6 +279,7 @@ function validateBasicRecord(collection, record, index, errors) {
     }
   } else if (collection === 'evidence') {
     if (!hasText(record.targetRef)) pushError(errors, `${path}.targetRef`, '必須指定圖鑑條目');
+    if (!hasText(record.fieldKey)) pushError(errors, `${path}.fieldKey`, '必須指定查證欄位鍵');
     if (!hasText(record.field)) pushError(errors, `${path}.field`, '必須指定查證欄位');
     if (!hasText(record.claimValue)) pushError(errors, `${path}.claimValue`, '主張內容不可空白');
     if (!hasText(record.reporterAlias)) pushError(errors, `${path}.reporterAlias`, '回報者代稱不可空白');
@@ -341,6 +393,24 @@ export function validateDatabase(database, options = {}) {
     const id = separator > 0 ? record.targetRef.slice(separator + 1) : '';
     if (!CATALOG_COLLECTIONS.includes(collection) || !ids[collection]?.has(id)) {
       pushError(errors, `evidence[${index}].targetRef`, `找不到圖鑑條目「${record.targetRef || ''}」`);
+    } else if (!FIELD_DEFINITIONS[collection]?.[fieldBase(record.fieldKey)]) {
+      pushError(errors, `evidence[${index}].fieldKey`, `「${record.fieldKey || ''}」不是 ${collection} 可回報的欄位`);
+    }
+  }
+
+  for (const collection of CATALOG_COLLECTIONS) {
+    for (const [index, record] of (database[collection] || []).entries()) {
+      for (const [fieldKey, verification] of Object.entries(record?.fieldVerifications || {})) {
+        for (const sourceId of verification?.sourceIds || []) {
+          if (!ids.sources?.has(sourceId)) pushError(errors, `${collection}[${index}].fieldVerifications.${fieldKey}.sourceIds`, `找不到 sources 的「${sourceId}」`);
+        }
+        for (const evidenceId of verification?.evidenceIds || []) {
+          if (!ids.evidence?.has(evidenceId)) pushError(errors, `${collection}[${index}].fieldVerifications.${fieldKey}.evidenceIds`, `找不到 evidence 的「${evidenceId}」`);
+        }
+        const member = String(fieldKey).includes(':') ? String(fieldKey).slice(String(fieldKey).indexOf(':') + 1) : '';
+        const base = fieldBase(fieldKey);
+        if (member && Array.isArray(record?.[base]) && !record[base].includes(member)) pushError(errors, `${collection}[${index}].fieldVerifications.${fieldKey}`, `關聯成員「${member}」不存在於 ${base}`);
+      }
     }
   }
 
@@ -368,7 +438,7 @@ export function validateDatabase(database, options = {}) {
 
   const evidenceClaims = new Set();
   for (const record of database.evidence || []) {
-    const key = [record?.targetRef, record?.field, String(record?.claimValue || '').trim().toLocaleLowerCase('zh-Hant'), String(record?.reporterAlias || '').trim().toLocaleLowerCase('zh-Hant')].join('\u0000');
+    const key = [record?.targetRef, record?.fieldKey, String(record?.claimValue || '').trim().toLocaleLowerCase('zh-Hant'), String(record?.reporterAlias || '').trim().toLocaleLowerCase('zh-Hant')].join('\u0000');
     if (evidenceClaims.has(key)) warnings.push(`玩家證據：${record.targetRef}/${record.field} 有同一回報者的重複主張`);
     evidenceClaims.add(key);
   }

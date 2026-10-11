@@ -2,6 +2,8 @@ import {
   CATALOG_COLLECTIONS,
   EVIDENCE_STATUSES,
   EVIDENCE_TYPES,
+  CRITICAL_FIELDS,
+  FIELD_DEFINITIONS,
   REFERENCE_RULES,
   SCHEMA_VERSION,
   TYPE_META,
@@ -20,6 +22,7 @@ import {
   mergeImportedData,
   parseCsvImport,
   parseImportPayload,
+  reviewEvidence as applyEvidenceReview,
   saveDatabase,
   saveFavorites
 } from './storage.js';
@@ -217,7 +220,7 @@ function homePage() {
   const stats = databaseStats(state.database);
   const categories = CATALOG_COLLECTIONS.map((collection) => `<button class="category" data-kind="${collection}"><span class="emoji">${TYPE_META[collection].icon}</span><strong>${TYPE_META[collection].label}</strong><span class="meta">${state.database[collection].filter((record) => !record.testData).length} 筆正式／待驗證資料</span></button>`).join('');
   const migrationNote = state.migration && (state.migration.schema || state.migration.entries || state.migration.prices)
-    ? `<div class="notice success"><strong>舊資料已安全遷移</strong><span>${state.migration.schema === 2 ? '已由 schema v2 升級至 v3；' : ''}保留 ${state.migration.entries || 0} 筆舊版自建條目與 ${state.migration.prices || 0} 筆舊版價格紀錄；舊 localStorage key 未刪除。</span></div>`
+    ? `<div class="notice success"><strong>舊資料已安全遷移</strong><span>${state.migration.schema ? `已由 schema v${state.migration.schema} 升級至 v${SCHEMA_VERSION}；` : ''}保留 ${state.migration.entries || 0} 筆舊版自建條目與 ${state.migration.prices || 0} 筆舊版價格紀錄；舊 localStorage key 未刪除。</span></div>`
     : '';
   return `${migrationNote}<section class="hero"><div class="eyebrow">MAPLESTAR KNOWLEDGE BASE</div><h1>楓星資料，關聯查得清楚。</h1><p>用穩定 ID 串起怪物、掉落物、地圖、NPC、職業技能、任務、BOSS、攻略與個人行情。未知數值保持空白，不把其他版本冒充為楓星。</p><div class="hero-actions"><button class="btn" data-tab="catalog">📖 搜尋全站</button><button class="btn ghost" data-tab="mine">🧰 管理資料</button></div></section>
     <div class="summary"><div class="stat"><div class="sticon">📚</div><div class="n">${stats.formalTotal}</div><div class="desc">圖鑑正式區條目</div></div><div class="stat"><div class="sticon">🛡️</div><div class="n">${stats.verificationRatio}%</div><div class="desc">已驗證比例</div></div><div class="stat"><div class="sticon">📷</div><div class="n">${stats.evidence.pending}</div><div class="desc">待審核玩家證據</div></div><div class="stat"><div class="sticon">⭐</div><div class="n">${state.favorites.length}</div><div class="desc">我的收藏</div></div></div>
@@ -249,7 +252,7 @@ function guidesPage() {
   const collections = ['jobs', 'skills', 'quests', 'bosses', 'guides'];
   const sections = collections.map((collection) => {
     const rows = state.database[collection].map((record) => ({ collection, record }));
-    return `<section><div class="section-title"><div><h2>${TYPE_META[collection].icon} ${TYPE_META[collection].label}</h2><p>${rows.length ? `${rows.length} 筆資料` : '尚無資料，歡迎依可靠來源建檔'}</p></div><button class="link-btn" data-kind="${collection}">在圖鑑中查看 →</button></div><div class="cards">${rows.length ? rows.map(card).join('') : empty(`尚無${TYPE_META[collection].short}資料`, '可新增自建資料或匯入符合 schema v3 的 JSON／CSV。')}</div></section>`;
+    return `<section><div class="section-title"><div><h2>${TYPE_META[collection].icon} ${TYPE_META[collection].label}</h2><p>${rows.length ? `${rows.length} 筆資料` : '尚無資料，歡迎依可靠來源建檔'}</p></div><button class="link-btn" data-kind="${collection}">在圖鑑中查看 →</button></div><div class="cards">${rows.length ? rows.map(card).join('') : empty(`尚無${TYPE_META[collection].short}資料`, `可新增自建資料或匯入符合 schema v${SCHEMA_VERSION} 的 JSON／CSV。`)}</div></section>`;
   }).join('');
   return `<div class="page-h"><div><h1>🧭 職業、任務與攻略</h1><p>配點、練等、裝備與任務資訊都保留來源和驗證狀態，不套用其他伺服器數值。</p></div><button class="btn primary" data-dialog="entry" data-kind-add="guides">＋ 新增攻略</button></div><div class="notice"><strong>資料不足時不會自動推薦</strong><span>需要等級、地圖與怪物經驗值等已驗證資料後，才適合產生練功排序。</span></div>${sections}`;
 }
@@ -306,9 +309,11 @@ function statisticsTable() {
   const stats = databaseStats(state.database);
   const rows = CATALOG_COLLECTIONS.map((collection) => {
     const current = stats.collections[collection];
-    return `<tr><th>${TYPE_META[collection].icon} ${e(TYPE_META[collection].short)}</th><td>${current.total}</td><td>${current.statuses['官方已確認']}</td><td>${current.statuses['玩家證據已驗證']}</td><td>${current.statuses['待驗證']}</td><td>${current.statuses['測試資料']}</td></tr>`;
+    return `<tr><th>${TYPE_META[collection].icon} ${e(TYPE_META[collection].short)}</th><td>${current.total}</td><td>${current.statuses['官方已確認']}</td><td>${current.statuses['玩家證據已驗證']}</td><td>${current.statuses['待驗證']}</td><td>${current.critical.completenessRatio}%</td><td>${current.critical.verifiedRatio}%</td><td>${current.critical.missingSource}</td></tr>`;
   }).join('');
-  return `<div class="stats-overview"><div><strong>${stats.formalTotal}</strong><span>正式區條目</span></div><div><strong>${stats.verified}</strong><span>已驗證</span></div><div><strong>${stats.verificationRatio}%</strong><span>驗證比例</span></div><div><strong>${stats.evidence.pending}</strong><span>證據待審</span></div></div><div class="table-scroll"><table class="stats-table"><thead><tr><th>分類</th><th>總數</th><th>官方</th><th>玩家驗證</th><th>待驗證</th><th>測試</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const levels = stats.levelCoverage.map((row) => `<div class="coverage-cell"><strong>Lv.${row.min}–${row.max}</strong><span>${row.verified}/${row.total} 等級已驗證</span></div>`).join('');
+  const priorities = stats.priorities.map((row) => `<button class="priority-row" data-detail="${e(recordRef(row.collection, row.id))}"><span>${TYPE_META[row.collection].icon} ${e(row.name)}</span><strong>缺 ${row.missing} 欄</strong></button>`).join('');
+  return `<div class="stats-overview"><div><strong>${stats.formalTotal}</strong><span>正式區條目</span></div><div><strong>${stats.verified}</strong><span>整筆已驗證</span></div><div><strong>${stats.evidence.pending}</strong><span>證據待審</span></div><div><strong>${e(stats.latestUpdatedAt ? new Date(stats.latestUpdatedAt).toLocaleDateString('zh-TW') : '—')}</strong><span>最近更新</span></div></div><div class="table-scroll"><table class="stats-table"><thead><tr><th>分類</th><th>總數</th><th>官方</th><th>玩家</th><th>待驗證</th><th>欄位有值</th><th>欄位已驗證</th><th>有值無來源</th></tr></thead><tbody>${rows}</tbody></table></div><h3 class="quality-heading">Lv.1～60 怪物等級覆蓋</h3><div class="coverage-grid">${levels}</div><div class="quality-grid"><div><h3>掉落關聯</h3><p><strong>${stats.drops.verifiedRelations}/${stats.drops.totalRelations}</strong> 條關聯已有欄位級證據；${stats.drops.monstersWithDrops} 隻怪物已有掉落清單。</p></div><div><h3>最需要證據</h3><div class="priority-list">${priorities || '<p>目前沒有缺口</p>'}</div></div></div>`;
 }
 
 function evidenceFor(ref) {
@@ -317,7 +322,7 @@ function evidenceFor(ref) {
 
 function evidenceCrossCount(record) {
   const normalizedClaim = String(record.claimValue || '').trim().toLocaleLowerCase('zh-Hant');
-  return new Set(state.database.evidence.filter((candidate) => candidate.targetRef === record.targetRef && candidate.field === record.field && String(candidate.claimValue || '').trim().toLocaleLowerCase('zh-Hant') === normalizedClaim && candidate.reviewStatus !== '已拒絕').map((candidate) => String(candidate.reporterAlias || '').trim().toLocaleLowerCase('zh-Hant'))).size;
+  return new Set(state.database.evidence.filter((candidate) => candidate.targetRef === record.targetRef && candidate.fieldKey === record.fieldKey && String(candidate.claimValue || '').trim().toLocaleLowerCase('zh-Hant') === normalizedClaim && candidate.reviewStatus !== '已拒絕').map((candidate) => String(candidate.reporterAlias || '').trim().toLocaleLowerCase('zh-Hant'))).size;
 }
 
 function evidenceCard(record, reviewTools = false) {
@@ -336,10 +341,10 @@ function minePage() {
   const userRecords = allCatalog().filter(({ record }) => record.userCreated);
   return `<div class="page-h"><div><h1>⭐ 收藏與資料管理</h1><p>收藏、自建內容、備份、匯入驗證與來源清單都集中在這裡。</p></div></div>
     <div class="section-title"><div><h2>我的收藏 <span class="muted-count">${favorites.length}</span></h2></div></div><div class="cards">${favorites.length ? favorites.map(card).join('') : empty('還沒有收藏', '在任一圖鑑卡片點星星，重新整理後仍會保留。', '<button class="btn soft" data-tab="catalog">前往圖鑑 →</button>')}</div>
-    <div class="section-title"><div><h2>資料完整度</h2><p>測試資料不計入驗證比例</p></div></div><div class="panel">${statisticsTable()}</div>
+    <div class="section-title"><div><h2>資料完整度儀表板</h2><p>依關鍵欄位計算；只有名稱不算完整，測試資料不計入</p></div></div><div class="panel">${statisticsTable()}</div>
     <div class="section-title"><div><h2>資料工具</h2><p>匯入前會檢查 schema、重複 ID、欄位與所有外鍵</p></div></div>
-    <div class="tools"><div class="panel"><h3>📤 JSON／CSV 匯入匯出</h3><p>完整備份含 schema v3 資料庫、證據、價格與收藏；亦可批次匯入 CSV。選檔後先預覽，不會立即寫入。</p><button class="btn primary" data-export>⬇ 匯出完整備份</button><button class="btn soft" data-import>⬆ 選擇 JSON／CSV</button><button class="btn soft" data-csv-template>下載 CSV 範本</button><input id="fileImport" type="file" accept=".json,.csv,application/json,text/csv" hidden></div><div class="panel"><h3>🔧 管理自建內容</h3><p>目前有 ${userRecords.length} 筆自建圖鑑、${state.database.prices.length} 筆價格、${state.database.evidence.length} 筆玩家證據。清空時會保留內建資料與舊版備份 key。</p><button class="btn soft" data-dialog="entry">＋ 新增條目</button><button class="btn soft" data-dialog="evidence">📷 回報證據</button><button class="btn danger" data-action="clear-user">清空 v3 自建資料</button></div></div>
-    <div class="section-title"><div><h2>玩家證據 <span class="muted-count">${state.database.evidence.length}</span></h2><p>採用證據不會自動改寫數值；請在交叉核對後另行編輯條目並標示「玩家證據已驗證」。</p></div><button class="btn soft" data-dialog="evidence">＋ 提交證據</button></div><div class="evidence-grid">${state.database.evidence.length ? state.database.evidence.slice().sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt)).map((record) => evidenceCard(record, true)).join('') : empty('尚無玩家證據', '可附遊戲內截圖、觀察日期、回報者代稱與外部證據網址。')}</div>
+    <div class="tools"><div class="panel"><h3>📤 JSON／CSV 匯入匯出</h3><p>完整備份含 schema v${SCHEMA_VERSION} 資料庫、欄位驗證、證據、價格與收藏；選檔後先預覽，不會立即寫入。</p><button class="btn primary" data-export>⬇ 匯出完整備份</button><button class="btn soft" data-import>⬆ 選擇 JSON／CSV</button><button class="btn soft" data-csv-template>下載 CSV 範本</button><input id="fileImport" type="file" accept=".json,.csv,application/json,text/csv" hidden></div><div class="panel"><h3>🔧 管理自建內容</h3><p>目前有 ${userRecords.length} 筆自建圖鑑、${state.database.prices.length} 筆價格、${state.database.evidence.length} 筆玩家證據。清空時會保留內建資料與舊版備份 key。</p><button class="btn soft" data-dialog="entry">＋ 新增條目</button><button class="btn soft" data-dialog="evidence">📷 回報證據</button><button class="btn danger" data-action="clear-user">清空 v${SCHEMA_VERSION} 自建資料</button></div></div>
+    <div class="section-title"><div><h2>玩家證據 <span class="muted-count">${state.database.evidence.length}</span></h2><p>本機人工審核：採用後才更新指定欄位；衝突回報全部保留。尚未連接 OCR 或雲端多人審核。</p></div><button class="btn soft" data-dialog="evidence">＋ 提交證據</button></div><div class="evidence-grid">${state.database.evidence.length ? state.database.evidence.slice().sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt)).map((record) => evidenceCard(record, true)).join('') : empty('尚無玩家證據', '可附遊戲內截圖、觀察日期、回報者代稱與外部證據網址。')}</div>
     <div class="section-title"><div><h2>我的自建條目</h2></div></div><div class="cards">${userRecords.length ? userRecords.map(card).join('') : empty('尚無自建條目', '新增內容時可附來源與驗證狀態。', '<button class="btn primary" data-dialog="entry">＋ 新增條目</button>')}</div>
     <div class="section-title"><div><h2>資料來源</h2><p>${state.database.sources.length} 筆；來源頁存在不等於所有內容已驗證</p></div></div><div class="panel source-list">${sourceRows()}</div>
     <p class="footnote">StarDex 是非官方玩家工具，與 Nexon、MapleStar 營運方無關。<br>資料只針對楓星 MapleStar；使用前請比對遊戲內最新資訊。</p>`;
@@ -447,6 +452,19 @@ function sourceBlock(record) {
   return sources.map((source) => `<div class="source-detail"><a href="${e(safeUrl(source.url))}" target="_blank" rel="noopener noreferrer">${e(source.name)} ↗</a><small>${e(source.sourceType || '其他公開資訊')}・版本 ${e(source.version || '未註明')}・查證 ${e(source.checkedAt || '未查證')}・${e(source.verificationStatus || '待驗證')}</small></div>`).join('');
 }
 
+function fieldAuditBlock(collection, record) {
+  const keys = [...new Set([...(CRITICAL_FIELDS[collection] || []), ...Object.keys(record.fieldVerifications || {})])];
+  return keys.map((key) => {
+    const verification = record.fieldVerifications?.[key];
+    const label = FIELD_DEFINITIONS[collection]?.[key.split(':')[0]] || key;
+    const member = key.includes(':') ? ` · ${getName(REFERENCE_RULES[collection]?.[key.split(':')[0]]?.collection || '', key.slice(key.indexOf(':') + 1))}` : '';
+    const status = verification?.status || '待驗證';
+    const style = status === '官方已確認' ? 'verified' : status === '玩家證據已驗證' ? 'player' : 'pending';
+    const trace = [...(verification?.sourceIds || []), ...(verification?.evidenceIds || [])].join('、') || '尚無可追溯來源';
+    return `<div class="field-audit"><div><strong>${e(label + member)}</strong><small>${e(trace)}${verification?.verifiedAt ? `・${e(verification.verifiedAt)}` : ''}</small></div><span class="tag ${style}">${e(status)}</span></div>`;
+  }).join('');
+}
+
 function renderDetail(ref) {
   const parsed = parseRecordRef(ref);
   if (!parsed) return '';
@@ -460,6 +478,7 @@ function renderDetail(ref) {
     <div class="field-list">${fields.map(([label, value]) => `<div class="field"><label>${e(label)}</label><span>${e(value)}</span></div>`).join('')}</div>
     <h3 class="detail-heading">📖 詳細資訊</h3><div class="detail-text">${e(description)}</div>
     ${relations.join('')}
+    <section class="relation-block"><h3>🧪 欄位級驗證</h3><div class="field-audit-list">${fieldAuditBlock(parsed.collection, record)}</div></section>
     <section class="relation-block"><h3>🔗 資料來源</h3>${sourceBlock(record)}${record.verifiedAt ? `<p class="checked-date">條目查證日期：${e(record.verifiedAt)}</p>` : ''}</section>
     <section class="relation-block"><div class="section-inline"><h3>📷 玩家證據（${evidence.length}）</h3><button class="mini-link" data-evidence-target="${e(ref)}">＋ 回報這筆資料</button></div>${evidence.length ? `<div class="evidence-grid compact">${evidence.map((item) => evidenceCard(item)).join('')}</div>` : '<p class="empty-inline">尚無玩家證據；官方未公開的欄位可由遊戲內截圖持續補充。</p>'}</section>
     <div class="form-actions split"><button class="btn soft" data-fav="${e(ref)}">${favorite ? '★ 已收藏' : '☆ 加入收藏'}</button><div class="two-actions">${record.userCreated ? `<button class="btn" data-edit="${e(ref)}">編輯</button><button class="btn danger" data-delete-entry="${e(ref)}">刪除</button>` : ''}<button class="btn" data-close>關閉</button></div></div>
@@ -524,11 +543,15 @@ function priceDialog() {
 }
 
 function evidenceDialog() {
+  const first = allCatalog()[0];
+  const selectedTarget = state.evidenceTarget || (first ? recordRef(first.collection, first.record.id) : '');
+  const selectedParsed = parseRecordRef(selectedTarget);
   const targetOptions = allCatalog().map(({ collection, record }) => {
     const ref = recordRef(collection, record.id);
-    return `<option value="${e(ref)}" ${state.evidenceTarget === ref ? 'selected' : ''}>${TYPE_META[collection].short}｜${e(record.name)} · ${e(record.id)}</option>`;
+    return `<option value="${e(ref)}" ${selectedTarget === ref ? 'selected' : ''}>${TYPE_META[collection].short}｜${e(record.name)} · ${e(record.id)}</option>`;
   }).join('');
-  return `<div class="overlay" data-backdrop><div class="modal modal-wide" role="dialog" aria-modal="true" aria-label="提交玩家證據"><div class="modal-top"><div><h2>📷 提交玩家證據</h2><p class="explain">截圖與回報先進入待審核區，不會直接改寫圖鑑；同一主張可由不同玩家交叉驗證。</p></div><button class="close" data-close>×</button></div><form id="evidenceForm"><div class="form-group"><label>圖鑑條目 *</label><select name="targetRef" required><option value="">請選擇</option>${targetOptions}</select></div><div class="form-grid"><div class="form-group"><label>查證欄位 *</label><input name="field" required maxlength="120" placeholder="例如：HP、掉落物、出沒地圖"></div><div class="form-group"><label>證據類型 *</label><select name="evidenceType">${EVIDENCE_TYPES.map((type) => `<option>${e(type)}</option>`).join('')}</select></div></div><div class="form-group"><label>觀察到的內容 *</label><textarea name="claimValue" required maxlength="5000" placeholder="只填畫面可確認的內容；請勿推算掉落率。"></textarea></div><div class="form-grid"><div class="form-group"><label>回報者代稱 *</label><input name="reporterAlias" required maxlength="80" autocomplete="nickname"></div><div class="form-group"><label>遊戲內觀察日期 *</label><input name="observedAt" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}" required></div></div><div class="form-group"><label>遊戲內截圖（PNG／JPEG／WebP，建議 1.5 MB 以下）</label><input name="screenshot" type="file" accept="image/png,image/jpeg,image/webp"><div class="form-hint">截圖會存入此瀏覽器的備份資料，請先遮蔽個人資訊。</div></div><div class="form-group"><label>外部證據網址（選填）</label><input name="evidenceUrl" type="url" placeholder="https://…"></div><div class="form-group"><label>補充說明</label><textarea name="reviewNotes" maxlength="1000" placeholder="畫面位置、伺服器或重現方式"></textarea></div><div class="form-actions"><button class="btn" type="button" data-close>取消</button><button class="btn primary" type="submit">送交待審核區</button></div></form></div></div>`;
+  const fieldOptions = Object.entries(FIELD_DEFINITIONS[selectedParsed?.collection] || {}).map(([key, label]) => `<option value="${e(key)}">${e(label)}</option>`).join('');
+  return `<div class="overlay" data-backdrop><div class="modal modal-wide" role="dialog" aria-modal="true" aria-label="提交玩家證據"><div class="modal-top"><div><h2>📷 提交玩家證據</h2><p class="explain">人工核對流程：先選明確欄位並附原始畫面，待審核採用後才寫入資料；系統不會假裝自動 OCR。</p></div><button class="close" data-close>×</button></div><form id="evidenceForm"><div class="form-group"><label>圖鑑條目 *</label><select id="evidenceTargetSelect" name="targetRef" required>${targetOptions}</select></div><div class="form-grid"><div class="form-group"><label>查證欄位 *</label><select name="fieldKey" required>${fieldOptions}</select></div><div class="form-group"><label>證據類型 *</label><select name="evidenceType">${EVIDENCE_TYPES.map((type) => `<option>${e(type)}</option>`).join('')}</select></div></div><div class="form-group"><label>觀察到的值／關聯 ID *</label><textarea name="claimValue" required maxlength="5000" placeholder="數值欄位填數字；掉落物、地圖等關聯填穩定 ID；物件欄位填 JSON。"></textarea><div class="form-hint">只填畫面可確認內容，不推算掉落率。關聯採用後會附加，不覆蓋既有清單。</div></div><div class="form-grid"><div class="form-group"><label>回報者代稱 *</label><input name="reporterAlias" required maxlength="80" autocomplete="nickname"></div><div class="form-group"><label>遊戲內觀察日期 *</label><input name="observedAt" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}" required></div></div><div class="form-group"><label>遊戲內截圖（PNG／JPEG／WebP，建議 1.5 MB 以下）</label><input name="screenshot" type="file" accept="image/png,image/jpeg,image/webp"><div class="form-hint">截圖只存於此瀏覽器及匯出備份；請先遮蔽個人資訊。</div></div><div class="form-group"><label>外部證據網址（選填）</label><input name="evidenceUrl" type="url" placeholder="https://…"></div><div class="form-group"><label>補充說明</label><textarea name="reviewNotes" maxlength="1000" placeholder="畫面位置、伺服器或重現方式"></textarea></div><div class="form-actions"><button class="btn" type="button" data-close>取消</button><button class="btn primary" type="submit">送交待審核區</button></div></form></div></div>`;
 }
 
 function importDialog() {
@@ -737,7 +760,8 @@ async function saveEvidence(formElement) {
   const sourceId = evidenceUrl ? createSource(evidenceUrl, '玩家證據來源') : null;
   const record = createEvidenceRecord({
     targetRef,
-    field: form.get('field'),
+    fieldKey: form.get('fieldKey'),
+    field: FIELD_DEFINITIONS[parsed.collection]?.[String(form.get('fieldKey'))] || String(form.get('fieldKey')),
     claimValue: form.get('claimValue'),
     evidenceType: form.get('evidenceType'),
     evidenceUrl,
@@ -762,12 +786,12 @@ function reviewEvidence(id, reviewStatus) {
   if (!record) return;
   const note = window.prompt(reviewStatus === '已採用' ? '採用理由或交叉驗證備註（可留空）' : '拒絕理由（建議填寫）', record.reviewNotes || '');
   if (note === null) return;
-  record.reviewStatus = reviewStatus;
-  record.reviewNotes = note.trim().slice(0, 1000);
-  record.reviewedAt = new Date().toISOString();
-  persistDatabase();
-  renderPage();
-  notify(reviewStatus === '已採用' ? '證據已採用；圖鑑數值仍需另行編輯確認' : '證據已標示拒絕');
+  try {
+    state.database = applyEvidenceReview(state.database, id, reviewStatus, note);
+    persistDatabase();
+    renderPage();
+    notify(reviewStatus === '已採用' ? '證據已採用，指定欄位與欄位級來源已更新' : '證據已標示拒絕，原始紀錄仍保留');
+  } catch (error) { notify(error.message, 'error'); }
 }
 
 function exportData() {
@@ -831,10 +855,15 @@ function applyImport() {
 }
 
 function clearUserData() {
-  if (!window.confirm('確定清空 schema v3 的自建圖鑑、玩家證據、價格與自建來源？內建資料及舊版 localStorage 備份不會刪除。')) return;
+  if (!window.confirm(`確定清空 schema v${SCHEMA_VERSION} 的自建圖鑑、玩家證據、價格與自建來源？內建資料及舊版 localStorage 備份不會刪除。`)) return;
   for (const collection of CATALOG_COLLECTIONS) state.database[collection] = state.database[collection].filter((record) => !record.userCreated);
   state.database.prices = [];
   state.database.evidence = [];
+  for (const collection of CATALOG_COLLECTIONS) {
+    for (const record of state.database[collection]) {
+      record.fieldVerifications = Object.fromEntries(Object.entries(record.fieldVerifications || {}).filter(([, value]) => !(value.evidenceIds || []).length));
+    }
+  }
   state.database.sources = state.database.sources.filter((record) => !record.userCreated);
   for (const collection of CATALOG_COLLECTIONS) {
     const valid = new Set(state.database[collection].map((record) => record.id));
@@ -846,7 +875,7 @@ function clearUserData() {
   persistDatabase();
   saveFavorites(state.favorites);
   render();
-  notify('已清空 v3 自建資料；舊資料備份仍保留');
+  notify(`已清空 v${SCHEMA_VERSION} 自建資料；舊資料備份仍保留`);
 }
 
 function updateCatalogResults() {
@@ -916,6 +945,7 @@ document.addEventListener('change', (event) => {
   if (event.target.id === 'sort') { state.sort = event.target.value; updateCatalogResults(); }
   if (event.target.id === 'statusFilter') { state.status = event.target.value; updateCatalogResults(); }
   if (event.target.id === 'entryKind') { state.formKind = event.target.value; renderModal(); }
+  if (event.target.id === 'evidenceTargetSelect') { state.evidenceTarget = event.target.value; renderModal(); }
   if (event.target.id === 'fileImport') { inspectImport(event.target.files?.[0]); event.target.value = ''; }
   if (event.target.id === 'marketItem') { state.marketItem = event.target.value; renderPage(); }
   if (event.target.id === 'marketServer') { state.marketServer = event.target.value; renderPage(); }
