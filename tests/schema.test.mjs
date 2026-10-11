@@ -16,11 +16,13 @@ import {
   loadAppData,
   makeBackup,
   makeCsvTemplate,
+  makeEvidenceBundle,
   mergeImportedData,
   migrateLegacyPayload,
   migrateV2Database,
   migrateV3Database,
   parseCsvImport,
+  parseEvidenceBundle,
   parseImportPayload,
   reviewEvidence
 } from '../js/storage.js';
@@ -439,4 +441,58 @@ test('完整備份還原時保留已採用於內建條目的欄位證據', () =>
   const monster = restored.database.monsters.find((record) => record.id === 'monster-cloud-fox');
   assert.equal(monster.hp, 321);
   assert.equal(monster.fieldVerifications.hp.status, '玩家證據已驗證');
+});
+
+test('玩家回報 JSON 只匯出證據、相關來源與目標索引', () => {
+  const database = clone(seed);
+  database.sources.push({ id: 'source-player-bundle', name: '玩家截圖來源', url: 'https://example.com/evidence', version: '玩家回報', checkedAt: '2026-10-11', verificationStatus: '待驗證', notes: '', sourceType: '玩家證據', userCreated: true });
+  database.evidence.push(createEvidenceRecord({ id: 'evidence-player-bundle', targetRef: 'monsters:monster-cloud-fox', fieldKey: 'hp', field: 'HP', claimValue: '123', evidenceType: '遊戲內截圖', reporterAlias: '玩家甲', observedAt: '2026-10-11', evidenceUrl: 'https://example.com/evidence', sourceId: 'source-player-bundle' }));
+  database.prices.push({ id: 'price-private-bundle', itemId: 'item-cloud-fox-tail', server: '私人測試', price: 100, recordedAt: '2026-10-11T00:00:00.000Z', dataSource: '手動', notes: '', sourceId: null, userCreated: true });
+  const bundle = makeEvidenceBundle(database);
+  assert.equal(bundle.format, 'StarDexEvidenceBundle');
+  assert.equal(bundle.schemaVersion, SCHEMA_VERSION);
+  assert.equal(bundle.evidence.length, 1);
+  assert.equal(bundle.sources.length, 1);
+  assert.deepEqual(bundle.targets.map((target) => target.ref), ['monsters:monster-cloud-fox']);
+  assert.equal('prices' in bundle, false);
+  assert.equal('favorites' in bundle, false);
+});
+
+test('管理者匯入玩家回報時一律重設為待審核且不直接更新圖鑑', () => {
+  const bundle = {
+    format: 'StarDexEvidenceBundle', schemaVersion: SCHEMA_VERSION, sources: [],
+    evidence: [{ ...createEvidenceRecord({ id: 'evidence-import-review', targetRef: 'monsters:monster-cloud-fox', fieldKey: 'hp', field: 'HP', claimValue: '456', evidenceType: '玩家填寫', reporterAlias: '玩家乙', observedAt: '2026-10-11' }), reviewStatus: '已採用', reviewedAt: '2026-10-11T01:00:00.000Z' }]
+  };
+  const result = parseEvidenceBundle(bundle, seed);
+  assert.equal(result.valid, true, result.errors.join('\n'));
+  const imported = result.database.evidence.find((record) => record.id === 'evidence-import-review');
+  assert.equal(imported.reviewStatus, '待審核');
+  assert.equal(imported.reviewedAt, '');
+  assert.equal(result.database.monsters.find((record) => record.id === 'monster-cloud-fox').hp, null);
+  assert.ok(result.warnings.some((warning) => warning.includes('已重設為待審核')));
+});
+
+test('玩家回報匯入拒絕重複證據 ID 與不存在目標', () => {
+  const evidence = createEvidenceRecord({ id: 'evidence-import-duplicate', targetRef: 'monsters:not-found', fieldKey: 'hp', field: 'HP', claimValue: '1', evidenceType: '玩家填寫', reporterAlias: '玩家丙', observedAt: '2026-10-11' });
+  const result = parseEvidenceBundle({ format: 'StarDexEvidenceBundle', schemaVersion: SCHEMA_VERSION, sources: [], evidence: [evidence, evidence] }, seed);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes('重複證據 ID')));
+  assert.ok(result.errors.some((error) => error.includes('找不到圖鑑條目')));
+});
+
+test('v5 載入目前 schema v4 時保留收藏、行情、證據與自建內容', () => {
+  const stored = clone(seed);
+  const custom = clone(stored.items[0]);
+  custom.id = 'item-user-v4-preserved'; custom.name = 'v4 保留物品'; custom.userCreated = true; custom.verificationStatus = '待驗證'; custom.fieldVerifications = {};
+  stored.items.push(custom);
+  stored.prices.push({ id: 'price-v4-preserved', itemId: custom.id, server: '玩家服', price: 789, recordedAt: '2026-10-11T00:00:00.000Z', dataSource: '手動', notes: '', sourceId: null, userCreated: true });
+  stored.evidence.push(createEvidenceRecord({ id: 'evidence-v4-preserved', targetRef: `items:${custom.id}`, fieldKey: 'acquisition', field: '取得方式', claimValue: '遊戲內畫面', evidenceType: '玩家填寫', reporterAlias: '玩家甲', observedAt: '2026-10-11' }));
+  const values = new Map([[DATABASE_KEY, JSON.stringify(stored)], [FAVORITES_KEY, JSON.stringify([`items:${custom.id}`])]]);
+  const storage = { getItem: (key) => values.has(key) ? values.get(key) : null, setItem: (key, value) => values.set(key, value) };
+  const loaded = loadAppData(seed, storage);
+  assert.ok(loaded.database.items.some((record) => record.id === custom.id));
+  assert.ok(loaded.database.prices.some((record) => record.id === 'price-v4-preserved'));
+  assert.ok(loaded.database.evidence.some((record) => record.id === 'evidence-v4-preserved'));
+  assert.deepEqual(loaded.favorites, [`items:${custom.id}`]);
+  assert.equal(validateDatabase(loaded.database, { allowTestData: true }).valid, true);
 });

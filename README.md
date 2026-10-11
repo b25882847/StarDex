@@ -1,78 +1,72 @@
 # 星圖鑑 StarDex｜楓星全功能圖鑑
 
-StarDex 是只針對「楓星 MapleStar」的繁體中文玩家資料庫。它是純 HTML、CSS、JavaScript PWA，不需後端、帳號、npm build 或付費服務，可直接用 VS Code Live Server 執行。
+StarDex v5.0.0 Public Beta 是只針對「楓星 MapleStar」的繁體中文玩家資料庫。專案是純 HTML、CSS、JavaScript PWA，不需後端或付費服務；原始碼可直接用 VS Code Live Server 執行，正式部署則由 GitHub Actions 產生白名單 `dist`。
 
-> 非官方玩家工具，與 Nexon、MapleStar 營運方無關。未取得可信來源的數值會保持空白或標示「待驗證」，不會把 Artale、楓之谷正式服或其他版本資料當成楓星資料。
+> 非官方玩家工具，與 Nexon、MapleStar 營運方無關。未取得可信來源的數值保持空白或標示「待驗證」，不得把 Artale、楓之谷正式服或其他版本資料當成楓星資料。
 
-## 功能
+## Public Beta 內容
 
-- 全站搜尋：名稱、等級、分類、說明與關聯名稱皆可搜尋，另有類型、驗證狀態、等級範圍與排序。
-- 關聯圖鑑：怪物、物品、地圖、NPC、職業、技能、任務、BOSS、攻略皆使用穩定 ID。
-- 雙向查詢：怪物可查掉落物；物品會反向列出來源怪物、BOSS 與任務；地圖會雙向合併怪物與 NPC 關聯。
-- 職業與攻略：轉職階段、武器、技能、前置技能、推薦配點、任務與攻略欄位。
-- 楓幣行情：手動輸入物品 ID、伺服器、價格、時間、資料來源與備註，依物品與伺服器顯示中位數和歷史。
-- 收藏與自建資料：localStorage 持久保存，可新增、編輯、刪除並支援所有圖鑑類型。
-- 玩家證據：可選擇明確欄位並提交遊戲內截圖、觀察日期、回報者及網址；人工採用後才更新對應欄位，衝突證據完整保留。
-- 欄位級驗證：關鍵欄位與個別關聯可各自記錄官方／玩家／待驗證狀態、來源、證據與日期。
-- JSON／CSV 管理：匯出完整 schema v4 備份；匯入前預覽新增／更新數量，並驗證版本、欄位、重複 ID、外鍵與測試資料標示。
-- 舊資料遷移：第一次啟動會讀取 schema v2／v3 或 v1 localStorage 並升級至 schema v4；收藏、價格、證據及舊 key 均保留。
-- 完整度儀表板：依分類顯示關鍵欄位有值率、驗證率、缺少來源、Lv.1～60 怪物覆蓋、掉落關聯與補證優先項目。
-- PWA：HTTPS 部署後可加入 iPhone 主畫面，已快取 HTML、CSS、JavaScript 與種子資料供離線使用。
+- 全站搜尋與關聯圖鑑：怪物、物品、地圖、NPC、職業、技能、任務、BOSS、攻略皆使用穩定 ID。
+- 雙向查詢：怪物可查掉落物；物品可反查怪物、BOSS 與任務；地圖會合併怪物與 NPC 的雙向關聯。
+- 欄位級驗證：關鍵欄位與個別關聯分別保存官方／玩家／待驗證狀態、來源、證據與日期。
+- 玩家證據：從詳情指定欄位，附遊戲截圖、網址、觀察日期與代稱；預覽確認後才進入本機待審核區。
+- 回報交換：可匯出獨立玩家回報 JSON；管理者匯入時一律重設為待審核，通過人工審核才更新欄位，衝突證據不會被覆蓋。
+- JSON／CSV 管理：匯入前預覽並檢查 schema、欄位型別、重複 ID、外鍵、來源與測試資料標記。
+- 收藏、價格與自建資料：以 localStorage 保存；schema v1～v3 可遷移，v4 儲存鍵在 v5 應用更新後保持不變。
+- PWA：Android Chrome 可在瀏覽器提供時安裝；iPhone／iPad Safari 可用「分享 → 加入主畫面」。第一次在線快取後可離線開啟內建圖鑑。
+- 更新保護：新 Service Worker 等待使用者確認才接管；更新公開程式快取，不刪除收藏、價格、證據或自建資料。
 
-## 用 Live Server 執行
+目前內建資料仍為 109 筆：怪物 6、物品 19、地圖 12、NPC 4、職業 15、技能 8、任務 22、BOSS 14、攻略 9；另有 14 筆來源。資料集版本 `2026.10.11.3`，本階段沒有為了增加數量而加入未查證內容。
 
-1. 在 VS Code 開啟本資料夾。
-2. 在 `index.html` 上按右鍵，選擇 **Open with Live Server**。
-3. 瀏覽器應開啟類似 `http://127.0.0.1:5500/index.html` 的網址。
+## 本機使用
 
-也可以使用任何靜態伺服器，例如：
+1. 在 VS Code 開啟專案資料夾。
+2. 在 `index.html` 按右鍵，選擇 **Open with Live Server**。
+3. 開啟類似 `http://127.0.0.1:5500/index.html` 的網址。
+
+也可用任何靜態伺服器；不要直接使用 `file://`，因為瀏覽器會阻擋 JavaScript 模組與 JSON 載入。
 
 ```powershell
 npx serve .
 ```
 
-請不要直接用 `file://` 開啟，因為瀏覽器會阻擋模組與 JSON 載入；這不是 StarDex 資料錯誤。
+Live Server、GitHub Pages、不同網域或瀏覽器的 localStorage 不會自動同步。移動前請在「我的」匯出完整備份，到新網址後再匯入。
 
-## 資料結構
+## GitHub Pages 部署準備
 
-主要檔案：
+`.github/workflows/deploy.yml` 會在 `master` 或 `main` push 後：
 
-- `data/maplestar.seed.json`：內建 109 筆楓星圖鑑種子資料與 14 筆來源，`schemaVersion: 4`。
-- `js/schema.js`：集合定義、驗證狀態、外鍵規則與完整資料驗證。
-- `js/storage.js`：localStorage、v1／v2／v3 → v4 遷移、欄位證據採用、JSON／CSV 匯入合併與完整備份。
-- `js/app.js`：搜尋、分類、詳情、關聯、收藏、價格、自建資料與資料管理介面。
-- `styles.css`：保留原 StarDex 色彩與版型，加入桌面、平板與 iPhone 響應式樣式。
-- `sw.js`：PWA 離線快取。
+1. 執行單元測試與 JavaScript 語法檢查。
+2. 用明確白名單建立 `dist`，不包含測試、README、備份、私有截圖或本機檔案。
+3. 掃描常見憑證格式、禁止的檔名、種子資料中的價格／證據／截圖與 `/StarDex/` 子路徑。
+4. 驗證通過才上傳 Pages artifact 並部署。
 
-資料庫集合：`monsters`、`items`、`maps`、`npcs`、`jobs`、`skills`、`quests`、`bosses`、`guides`、`prices`、`evidence`、`sources`。
+此本機 repository 尚未設定 remote，專案也不會自行建立公開儲存庫。要上線時由儲存庫擁有者：
 
-關聯一律使用 ID，例如：
+1. 在 GitHub 建立或選擇儲存庫並加入 remote。
+2. 確認欲公開的歷史與檔案後，以一般 push 推送 `master` 或 `main`（不要 force push）。
+3. 到 **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**。
+4. 查看 Actions 的 Test and deploy workflow；成功後再以該 run 的 Pages URL 驗收。
 
-```json
-{
-  "id": "monster-cloud-fox",
-  "dropItemIds": ["item-cloud-fox-tail"],
-  "mapIds": ["map-mushroom-shrine-vicinity"],
-  "sourceIds": ["source-update-2026-05-21"]
-}
-```
+所有網站資源使用相對 URL，manifest 與 Service Worker scope 也依所在目錄計算，因此同時支援根網址與 `/StarDex/` 類型的 repository 子路徑。
 
-空值代表未知，不代表 0。測試資料必須同時設定 `testData: true` 與 `verificationStatus: "測試資料"`，介面會以不同底色與標籤呈現。
-
-目前內建資料版本為 `2026.10.11.2`，包含 5 個怪物、12 個物品、12 個地圖、4 個 NPC、5 個職業、5 個技能、10 個任務、14 個 BOSS、9 篇攻略與 12 筆來源。官方公告已逐頁核對；公告未公開的 HP、MP、掉落率、入場次數、裝備數值與獎勵清單仍保持空白或「待驗證」。
-
-本批已查證內容包含休息經驗值、魔物公園與組隊任務經驗調整、Lv.10～20 升級所需經驗值、120 級職業移動技能、致命暗殺調整、BOSS 獎勵公告與每日／每週／每月重置時間。來源的 URL、版本、查證日期與驗證狀態皆保存在 `sources` 集合。
-
-## 備份與匯入
+## 備份、玩家回報與審核
 
 在「我的」→「資料工具」：
 
-- **匯出完整備份**：包含 schema v4 資料庫、欄位驗證、玩家證據、價格和收藏。
-- **選擇 JSON／CSV**：先顯示驗證結果與差異預覽；有錯誤時不會寫入 localStorage。
-- **下載 CSV 範本**：範本以 `collection`、穩定 `id` 和關聯 ID 為核心；陣列用 `|` 分隔，`stats` 使用 JSON 物件。
-- 合併時以 ID 更新自建資料，內建資料不允許被匯入檔覆寫。
-- 原 StarDex v1 與 schema v2／v3 備份仍可匯入並自動遷移；收藏、價格、自建資料與玩家證據會保留。
-- 玩家匯入資料不可自行宣告「官方已確認」，會安全降級為「待驗證」。
+- **匯出完整備份**：含 schema v4 資料庫、欄位驗證、玩家證據、價格與收藏。
+- **匯出玩家回報 JSON**：只含玩家證據、相關來源與目標索引，不含收藏與價格。
+- **匯入備份／玩家回報／CSV**：先顯示驗證結果與差異預覽；有錯誤時不寫入 localStorage。
+- 玩家回報的既有「已採用」狀態不受信任，匯入時會改回「待審核」。管理者必須檢視原始證據後，再按「採用證據」。
+- 目前沒有共用後端；按下本機回報不會傳送給任何人。玩家需下載 JSON 並透過管理者另行公布的管道傳遞。
+
+## 資料與安全界線
+
+- 公開種子：`data/maplestar.seed.json`，schema v4。
+- 本機資料：`stardex.database.v4` 與 `stardex.favorites.v4`；v5 不更名、不清除。
+- 輸出不可信文字前會 HTML escaping；網址只接受 HTTP／HTTPS；圖片只接受 PNG／JPEG／WebP data URL 並限制大小。
+- `dist` 是唯一部署目錄；`.gitignore` 另排除環境檔、金鑰、備份、私人資料與截圖目錄。
+- Service Worker 只攔截同 origin 且位於自身 scope 下的 GET 請求，不處理或清除 localStorage。
 
 ## 測試
 
@@ -80,16 +74,17 @@ npx serve .
 
 ```powershell
 npm test
+npm run check:syntax
+npm run build
+npm run validate:public
 ```
 
-34 項測試涵蓋內建資料驗證、雙向穩定 ID 關聯、官方公告精確數值、欄位級驗證、證據採用與衝突保留、CSV 預覽與拒絕規則、重複 ID、無效外鍵、測試資料隔離、v1／v2／v3 遷移、收藏與價格保留、品質統計與備份再匯入。
+一次執行完整靜態檢查：
 
-## 還原修改前版本
-
-第三階段升級前的本機 Git 基準 commit：
-
-```text
-d903dcd feat: add verified MapleStar reference data
+```powershell
+npm run check
 ```
 
-請先自行備份目前修改，再以 Git 檢視或還原該 commit。不要用會清除未提交工作的指令，除非你確定不需要目前變更。
+測試涵蓋 v1～v4 本機資料保留、搜尋關聯所需穩定 ID、玩家證據審核與衝突、回報 JSON 權限降級、CSV／JSON 匯入、PWA manifest、Service Worker 更新策略、GitHub Pages 子路徑與部署白名單。
+
+完整版本紀錄請見 `CHANGELOG.md`。

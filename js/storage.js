@@ -414,7 +414,132 @@ export function makeBackup(database, favorites) {
   };
 }
 
+export function makeEvidenceBundle(database) {
+  const evidence = clone(database.evidence || []);
+  const sourceIds = new Set(evidence.map((record) => record.sourceId).filter(Boolean));
+  const targetRefs = [...new Set(evidence.map((record) => record.targetRef).filter(Boolean))];
+  return {
+    format: 'StarDexEvidenceBundle',
+    schemaVersion: SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    notice: '本檔案是玩家本機回報，匯入後一律回到待審核，不代表官方確認。',
+    evidence,
+    sources: (database.sources || []).filter((source) => sourceIds.has(source.id)).map(clone),
+    targets: targetRefs.map((ref) => {
+      const parsed = parseRecordRef(ref);
+      const record = parsed ? database[parsed.collection]?.find((entry) => entry.id === parsed.id) : null;
+      return { ref, collection: parsed?.collection || '', id: parsed?.id || '', name: record?.name || '' };
+    })
+  };
+}
+
+export function parseEvidenceBundle(raw, currentDatabase) {
+  const errors = [];
+  const warnings = [];
+  if (!raw || typeof raw !== 'object' || raw.format !== 'StarDexEvidenceBundle') {
+    return { valid: false, errors: ['不是 StarDex 玩家回報 JSON'], warnings, format: '玩家回報 JSON' };
+  }
+  if (raw.schemaVersion !== SCHEMA_VERSION) errors.push(`玩家回報 schemaVersion 必須是 ${SCHEMA_VERSION}`);
+  if (!Array.isArray(raw.evidence)) errors.push('evidence 必須是陣列');
+  if (raw.sources !== undefined && !Array.isArray(raw.sources)) errors.push('sources 必須是陣列');
+  if (errors.length) return { valid: false, errors, warnings, format: '玩家回報 JSON' };
+
+  const candidate = clone(currentDatabase);
+  const existingSources = new Map(candidate.sources.map((source) => [source.id, source]));
+  const incomingSourceIds = new Set();
+  for (const source of raw.sources || []) {
+    if (!source || typeof source !== 'object') {
+      errors.push('玩家回報來源必須是物件');
+      continue;
+    }
+    const id = safeId(source.id, 'source-player');
+    if (id !== source.id) errors.push(`玩家回報來源 ID 無效：「${String(source.id || '')}」`);
+    if (incomingSourceIds.has(id)) errors.push(`玩家回報來源重複 ID：「${id}」`);
+    incomingSourceIds.add(id);
+    const url = safeUrl(source.url);
+    if (!url) errors.push(`玩家回報來源 ${id} 缺少有效 http/https 網址`);
+    const existing = existingSources.get(id);
+    if (existing) {
+      if (url && existing.url !== url) errors.push(`玩家回報來源 ${id} 與現有來源網址衝突`);
+      continue;
+    }
+    const normalized = {
+      id,
+      name: text(source.name, 160) || `玩家證據來源 · ${url ? new URL(url).hostname : id}`,
+      url,
+      version: text(source.version, 120) || '玩家回報匯入',
+      checkedAt: safeDate(source.checkedAt || Date.now()).slice(0, 10),
+      verificationStatus: '待驗證',
+      notes: text(source.notes, 1000) || '由玩家回報 JSON 匯入，尚未由 StarDex 管理者核對。',
+      sourceType: '玩家證據',
+      userCreated: true
+    };
+    candidate.sources.push(normalized);
+    existingSources.set(id, normalized);
+    if (source.verificationStatus === '官方已確認' || source.sourceType === '楓星官方') warnings.push(`來源 ${id} 的官方狀態未被採信，已改為待驗證玩家來源`);
+  }
+
+  const incomingEvidenceIds = new Set();
+  const existingEvidenceIds = new Set(candidate.evidence.map((record) => record.id));
+  const previewRows = [];
+  for (const [index, incoming] of raw.evidence.entries()) {
+    if (!incoming || typeof incoming !== 'object') {
+      errors.push(`evidence[${index}] 必須是物件`);
+      continue;
+    }
+    const id = safeId(incoming.id, 'evidence-player');
+    if (id !== incoming.id) errors.push(`evidence[${index}].id 無效：「${String(incoming.id || '')}」`);
+    if (incomingEvidenceIds.has(id)) errors.push(`玩家回報含重複證據 ID：「${id}」`);
+    incomingEvidenceIds.add(id);
+    const parsed = parseRecordRef(incoming.targetRef);
+    if (!parsed || !candidate[parsed.collection]?.some((record) => record.id === parsed.id)) {
+      errors.push(`evidence[${index}].targetRef 找不到圖鑑條目「${String(incoming.targetRef || '')}」`);
+      continue;
+    }
+    if (incoming.sourceId && !existingSources.has(incoming.sourceId)) errors.push(`evidence[${index}].sourceId 找不到來源「${incoming.sourceId}」`);
+    if (existingEvidenceIds.has(id)) {
+      warnings.push(`略過已存在的玩家證據 ${id}`);
+      previewRows.push({ line: index + 1, collection: 'evidence', id, name: incoming.field || incoming.fieldKey || '玩家證據', action: '略過重複' });
+      continue;
+    }
+    let record;
+    try {
+      record = createEvidenceRecord({
+        ...incoming,
+        id,
+        reviewStatus: '待審核',
+        reviewNotes: text(incoming.reviewNotes, 1000),
+        reviewedAt: '',
+        sourceId: incoming.sourceId || null
+      });
+    } catch (error) {
+      errors.push(`evidence[${index}]：${error.message}`);
+      continue;
+    }
+    if (incoming.reviewStatus && incoming.reviewStatus !== '待審核') warnings.push(`證據 ${id} 的審核狀態已重設為待審核`);
+    candidate.evidence.push(record);
+    existingEvidenceIds.add(id);
+    previewRows.push({ line: index + 1, collection: 'evidence', id, name: record.field, action: '新增待審核' });
+  }
+
+  const validation = validateDatabase(candidate, { allowTestData: true });
+  errors.push(...validation.errors);
+  warnings.push(...validation.warnings);
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    database: candidate,
+    favorites: [],
+    migrated: false,
+    format: '玩家回報 JSON',
+    previewRows,
+    changes: summarizeImportChanges(currentDatabase, candidate)
+  };
+}
+
 export function parseImportPayload(raw, currentDatabase) {
+  if (raw?.format === 'StarDexEvidenceBundle') return parseEvidenceBundle(raw, currentDatabase);
   let candidate;
   let favorites = [];
   let migrated = false;

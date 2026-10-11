@@ -1,0 +1,24 @@
+{
+  "id": "./",
+  "name": "星圖鑑 StarDex｜楓星全功能圖鑑",
+  "short_name": "星圖鑑",
+  "description": "楓星 MapleStar 專用的關聯式圖鑑、攻略、收藏與行情筆記",
+  "lang": "zh-Hant",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#f5f7fb",
+  "theme_color": "#17253d",
+  "categories": ["games", "reference", "utilities"],
+  "icons": [
+    {"src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ],
+  "shortcuts": [
+    {"name": "開啟楓星圖鑑", "short_name": "圖鑑", "url": "./?view=catalog", "icons": [{"src": "./icon-192.png", "sizes": "192x192", "type": "image/png"}]},
+    {"name": "資料管理與備份", "short_name": "資料管理", "url": "./?view=mine", "icons": [{"src": "./icon-192.png", "sizes": "192x192", "type": "image/png"}]}
+  ]
+}

@@ -12,6 +12,7 @@ import {
   recordRef,
   validateDatabase
 } from './schema.js';
+import { APP_VERSION, RELEASE_DATE, RELEASE_NOTES } from './config.js';
 import {
   createEvidenceRecord,
   createUserRecord,
@@ -19,6 +20,7 @@ import {
   loadAppData,
   makeBackup,
   makeCsvTemplate,
+  makeEvidenceBundle,
   mergeImportedData,
   parseCsvImport,
   parseImportPayload,
@@ -48,6 +50,11 @@ const state = {
   pendingImport: null,
   importReport: null,
   evidenceTarget: '',
+  evidenceDraft: null,
+  pendingEvidence: null,
+  installPrompt: null,
+  waitingWorker: null,
+  datasetUpdatedAt: '',
   migration: null,
   fatalError: null
 };
@@ -183,11 +190,11 @@ function scaffold() {
         <div class="navgroup-title">資料類別</div>
         ${CATALOG_COLLECTIONS.map((collection) => `<button class="snav ${state.tab === 'catalog' && state.kind === collection ? 'active' : ''}" data-kind="${collection}"><span>${TYPE_META[collection].icon}</span>${TYPE_META[collection].short}<span class="count">${count(collection)}</span></button>`).join('')}
       </div>
-      <div class="sidebar-bottom"><strong>🛡️ 不混用其他版本</strong>無可靠來源的數值一律留白或標示待驗證；資料保存在此瀏覽器。</div>
+      <div class="sidebar-bottom"><strong>🧪 Public Beta v${APP_VERSION}</strong>無可靠來源的數值一律留白或標示待驗證；資料只保存在目前瀏覽器。<button class="mini-link beta-side-link" data-tab="beta">版本與安裝說明 →</button></div>
     </aside>
     <section class="main">
-      <header class="topbar"><span class="crumb">楓星玩家百科 <span class="slash">／</span> ${e(pageTitle())}</span><div class="topbar-actions"><span class="date">Schema v${SCHEMA_VERSION} · ${e(state.database.meta.datasetVersion)}</span><button class="btn primary" data-dialog="entry">＋ 新增資料</button></div></header>
-      <div class="mobile-bar"><div class="mini-brand"><div class="mark">🍁</div><span>星圖鑑 <small>v${SCHEMA_VERSION}</small></span></div><button class="btn sm primary" data-dialog="entry">＋ 新增</button></div>
+      <header class="topbar"><span class="crumb">楓星玩家百科 <span class="slash">／</span> ${e(pageTitle())}</span><div class="topbar-actions"><span class="date">Beta v${APP_VERSION} · Schema v${SCHEMA_VERSION} · ${e(state.database.meta.datasetVersion)}</span><button class="btn primary" data-dialog="entry">＋ 新增資料</button></div></header>
+      <div class="mobile-bar"><div class="mini-brand"><div class="mark">🍁</div><span>星圖鑑 <small>Beta v${APP_VERSION}</small></span></div><button class="btn sm primary" data-dialog="entry">＋ 新增</button></div>
       <main class="content" id="content"></main>
     </section>
   </div>
@@ -196,7 +203,7 @@ function scaffold() {
 }
 
 function pageTitle() {
-  return ({ home: '探索首頁', catalog: '全站圖鑑', guides: '職業與攻略', market: '楓幣行情', mine: '收藏與資料管理' })[state.tab] || '星圖鑑';
+  return ({ home: '探索首頁', catalog: '全站圖鑑', guides: '職業與攻略', market: '楓幣行情', mine: '收藏與資料管理', beta: 'Public Beta 說明' })[state.tab] || '星圖鑑';
 }
 
 function empty(title, message, action = '') {
@@ -222,11 +229,24 @@ function homePage() {
   const migrationNote = state.migration && (state.migration.schema || state.migration.entries || state.migration.prices)
     ? `<div class="notice success"><strong>舊資料已安全遷移</strong><span>${state.migration.schema ? `已由 schema v${state.migration.schema} 升級至 v${SCHEMA_VERSION}；` : ''}保留 ${state.migration.entries || 0} 筆舊版自建條目與 ${state.migration.prices || 0} 筆舊版價格紀錄；舊 localStorage key 未刪除。</span></div>`
     : '';
-  return `${migrationNote}<section class="hero"><div class="eyebrow">MAPLESTAR KNOWLEDGE BASE</div><h1>楓星資料，關聯查得清楚。</h1><p>用穩定 ID 串起怪物、掉落物、地圖、NPC、職業技能、任務、BOSS、攻略與個人行情。未知數值保持空白，不把其他版本冒充為楓星。</p><div class="hero-actions"><button class="btn" data-tab="catalog">📖 搜尋全站</button><button class="btn ghost" data-tab="mine">🧰 管理資料</button></div></section>
+  return `${migrationNote}<div class="beta-alert"><div><span class="beta-badge">PUBLIC BETA · v${APP_VERSION}</span><strong>圖鑑資料仍在蒐集，待驗證內容不可視為確定資訊。</strong><small>內建資料更新：${e(new Date(state.datasetUpdatedAt || state.database.meta.updatedAt).toLocaleDateString('zh-TW'))} · 本機資料不會自動同步到其他網址或裝置</small></div><button class="btn sm soft" data-tab="beta">了解版本與安裝</button></div><section class="hero"><div class="eyebrow">MAPLESTAR KNOWLEDGE BASE</div><h1>楓星資料，關聯查得清楚。</h1><p>用穩定 ID 串起怪物、掉落物、地圖、NPC、職業技能、任務、BOSS、攻略與個人行情。未知數值保持空白，不把其他版本冒充為楓星。</p><div class="hero-actions"><button class="btn" data-tab="catalog">📖 搜尋全站</button><button class="btn ghost" data-tab="mine">🧰 管理資料</button><button class="btn ghost" data-install>📲 安裝 App</button></div></section>
     <div class="summary"><div class="stat"><div class="sticon">📚</div><div class="n">${stats.formalTotal}</div><div class="desc">圖鑑正式區條目</div></div><div class="stat"><div class="sticon">🛡️</div><div class="n">${stats.verificationRatio}%</div><div class="desc">已驗證比例</div></div><div class="stat"><div class="sticon">📷</div><div class="n">${stats.evidence.pending}</div><div class="desc">待審核玩家證據</div></div><div class="stat"><div class="sticon">⭐</div><div class="n">${state.favorites.length}</div><div class="desc">我的收藏</div></div></div>
     <div class="section-title"><div><h2>分類查詢</h2><p>沒有內容的欄位會誠實顯示空白狀態</p></div><button class="link-btn" data-tab="catalog">查看全部 →</button></div><div class="categories">${categories}</div>
     <div class="section-title"><div><h2>資料可信度</h2><p>來源存在，不代表所有欄位都已驗證</p></div></div>
     <div class="grid2"><div class="panel"><h3>🔁 可追蹤的雙向關聯</h3><div class="row-line"><strong>怪物 → 掉落物</strong><small>依 dropItemIds</small></div><div class="row-line"><strong>物品 → 怪物・BOSS・任務</strong><small>即時計算反向來源</small></div><div class="row-line"><strong>地圖 ↔ 怪物・NPC</strong><small>雙向合併穩定 ID</small></div><button class="btn soft sm" data-detail="monsters:monster-cloud-fox">查看雲狐範例 →</button></div><div class="panel"><h3>🛡️ 驗證狀態</h3><div class="row-line"><strong><span class="tag verified">官方已確認</span></strong><small>官方公開資訊直接確認</small></div><div class="row-line"><strong><span class="tag player">玩家證據已驗證</span></strong><small>證據經審核或交叉驗證</small></div><div class="row-line"><strong><span class="tag pending">待驗證</span></strong><small>不可當作確定數值</small></div><div class="row-line"><strong><span class="tag test">測試資料</span></strong><small>明確隔離、不冒充正式資料</small></div></div></div>`;
+}
+
+function betaPage() {
+  const updated = new Date(state.datasetUpdatedAt || state.database.meta.updatedAt).toLocaleString('zh-TW');
+  const standalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const installState = standalone ? '目前已用安裝模式開啟。' : state.installPrompt ? '此瀏覽器已提供安裝選項。' : '請依下方裝置步驟安裝。';
+  return `<div class="page-h"><div><span class="beta-badge">PUBLIC BETA</span><h1>StarDex v${APP_VERSION}</h1><p>公開測試版仍有資料缺口；請以欄位狀態與原始來源判斷可信度。</p></div><button class="btn soft" data-tab="home">← 返回首頁</button></div>
+    <div class="notice warning"><strong>資料不完整提醒</strong><span>「待驗證」與空白欄位都不是零，也不是已確認資訊。其他版本的楓之谷資料不會直接當成楓星資料。</span></div>
+    <div class="beta-grid"><section class="panel"><h2>版本與資料</h2><div class="row-line"><strong>應用程式</strong><small>v${APP_VERSION} · ${e(RELEASE_DATE)}</small></div><div class="row-line"><strong>資料格式</strong><small>Schema v${SCHEMA_VERSION}</small></div><div class="row-line"><strong>資料集</strong><small>${e(state.database.meta.datasetVersion)}</small></div><div class="row-line"><strong>最後更新</strong><small>${e(updated)}</small></div><h3>本版更新</h3><ul class="plain-list">${RELEASE_NOTES.map((note) => `<li>${e(note)}</li>`).join('')}</ul></section>
+    <section class="panel"><h2>可信度怎麼看</h2><div class="status-guide"><div><span class="tag verified">官方已確認</span><p>楓星官方公開頁面可直接確認的欄位；仍應查看來源日期。</p></div><div><span class="tag player">玩家證據已驗證</span><p>管理者人工對照截圖或證據後採用，不等於官方公告。</p></div><div><span class="tag pending">待驗證</span><p>候選資料或尚無足夠證據，不可當作確定資訊。</p></div><div><span class="tag test">測試資料</span><p>只用於測試功能，明確隔離於正式資料。</p></div></div></section></div>
+    <section class="panel beta-section"><h2>資料來源與查證方式</h2><p>StarDex 優先引用楓星官方公告；官方未公開的欄位，採遊戲內截圖與玩家人工回報。每個關鍵欄位可分別記錄來源、日期與狀態。回報先留在本機待審核，審核通過後才更新圖鑑；系統沒有 OCR，也沒有假裝把資料送到雲端。</p><button class="btn soft" data-tab="mine">查看來源與證據管理 →</button></section>
+    <section class="panel beta-section" id="install-guide"><h2>手機安裝與離線使用</h2><p>${e(installState)} 第一次必須在線開啟並完成快取；之後才能離線讀取已快取的介面與內建圖鑑。</p><div class="install-grid"><div><h3>iPhone / iPad Safari</h3><ol><li>用 Safari 開啟正式 HTTPS 網址。</li><li>點「分享」→「加入主畫面」。</li><li>確認名稱後點「新增」。</li></ol></div><div><h3>Android Chrome</h3><ol><li>用 Chrome 開啟正式 HTTPS 網址。</li><li>點瀏覽器的「安裝應用程式」或本頁按鈕。</li><li>依提示完成安裝。</li></ol><button class="btn primary sm" data-install>嘗試安裝</button></div></div><div class="notice"><strong>搬家前先備份</strong><span>Live Server、GitHub Pages、不同網域與不同瀏覽器各自使用獨立 localStorage；收藏、行情、證據與自建資料不會自動同步。請在「我的」匯出完整備份，再到新網址匯入。</span></div></section>
+    <section class="panel beta-section"><h2>常見問題與回報</h2><details><summary>為什麼有名稱卻沒有數值？</summary><p>公開來源可能只確認名稱或活動存在；HP、經驗值、掉落率等未被可靠來源確認時會保持空白。</p></details><details><summary>如何回報錯誤？</summary><p>從任一圖鑑詳情點「回報這筆資料」，指定欄位、證據網址、觀察日期、代稱與可選截圖，預覽後保存；再匯出玩家回報 JSON 交給管理者。</p></details><details><summary>按下回報是否已送到網站管理者？</summary><p>沒有。Public Beta 尚無共用後端，所有回報只保存在目前瀏覽器；必須匯出 JSON 並用管理者公告的外部管道傳送。</p></details><details><summary>更新會刪除我的資料嗎？</summary><p>不會。v5 保持 schema v4 儲存鍵，Service Worker 更新只更換公開程式快取，不清除 localStorage。仍建議更新或換網址前先匯出備份。</p></details></section>`;
 }
 
 function catalogControls() {
@@ -343,7 +363,7 @@ function minePage() {
     <div class="section-title"><div><h2>我的收藏 <span class="muted-count">${favorites.length}</span></h2></div></div><div class="cards">${favorites.length ? favorites.map(card).join('') : empty('還沒有收藏', '在任一圖鑑卡片點星星，重新整理後仍會保留。', '<button class="btn soft" data-tab="catalog">前往圖鑑 →</button>')}</div>
     <div class="section-title"><div><h2>資料完整度儀表板</h2><p>依關鍵欄位計算；只有名稱不算完整，測試資料不計入</p></div></div><div class="panel">${statisticsTable()}</div>
     <div class="section-title"><div><h2>資料工具</h2><p>匯入前會檢查 schema、重複 ID、欄位與所有外鍵</p></div></div>
-    <div class="tools"><div class="panel"><h3>📤 JSON／CSV 匯入匯出</h3><p>完整備份含 schema v${SCHEMA_VERSION} 資料庫、欄位驗證、證據、價格與收藏；選檔後先預覽，不會立即寫入。</p><button class="btn primary" data-export>⬇ 匯出完整備份</button><button class="btn soft" data-import>⬆ 選擇 JSON／CSV</button><button class="btn soft" data-csv-template>下載 CSV 範本</button><input id="fileImport" type="file" accept=".json,.csv,application/json,text/csv" hidden></div><div class="panel"><h3>🔧 管理自建內容</h3><p>目前有 ${userRecords.length} 筆自建圖鑑、${state.database.prices.length} 筆價格、${state.database.evidence.length} 筆玩家證據。清空時會保留內建資料與舊版備份 key。</p><button class="btn soft" data-dialog="entry">＋ 新增條目</button><button class="btn soft" data-dialog="evidence">📷 回報證據</button><button class="btn danger" data-action="clear-user">清空 v${SCHEMA_VERSION} 自建資料</button></div></div>
+    <div class="tools"><div class="panel"><h3>📤 JSON／CSV 匯入匯出</h3><p>完整備份含 schema v${SCHEMA_VERSION} 資料庫、欄位驗證、證據、價格與收藏；玩家回報 JSON 只含回報、相關來源與目標索引。所有檔案選取後都先預覽，不會立即寫入。</p><button class="btn primary" data-export>⬇ 匯出完整備份</button><button class="btn soft" data-export-evidence>📷 匯出玩家回報 JSON</button><button class="btn soft" data-import>⬆ 匯入備份／玩家回報／CSV</button><button class="btn soft" data-csv-template>下載 CSV 範本</button><input id="fileImport" type="file" accept=".json,.csv,application/json,text/csv" hidden><div class="notice compact"><strong>網址或裝置切換不會自動同步</strong><span>請先匯出完整備份；到新網址後再選擇該 JSON、檢查預覽並確認匯入。</span></div></div><div class="panel"><h3>🔧 管理自建內容</h3><p>目前有 ${userRecords.length} 筆自建圖鑑、${state.database.prices.length} 筆價格、${state.database.evidence.length} 筆玩家證據。清空時會保留內建資料與舊版備份 key。</p><button class="btn soft" data-dialog="entry">＋ 新增條目</button><button class="btn soft" data-dialog="evidence">📷 回報證據</button><button class="btn danger" data-action="clear-user">清空 v${SCHEMA_VERSION} 自建資料</button></div></div>
     <div class="section-title"><div><h2>玩家證據 <span class="muted-count">${state.database.evidence.length}</span></h2><p>本機人工審核：採用後才更新指定欄位；衝突回報全部保留。尚未連接 OCR 或雲端多人審核。</p></div><button class="btn soft" data-dialog="evidence">＋ 提交證據</button></div><div class="evidence-grid">${state.database.evidence.length ? state.database.evidence.slice().sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt)).map((record) => evidenceCard(record, true)).join('') : empty('尚無玩家證據', '可附遊戲內截圖、觀察日期、回報者代稱與外部證據網址。')}</div>
     <div class="section-title"><div><h2>我的自建條目</h2></div></div><div class="cards">${userRecords.length ? userRecords.map(card).join('') : empty('尚無自建條目', '新增內容時可附來源與驗證狀態。', '<button class="btn primary" data-dialog="entry">＋ 新增條目</button>')}</div>
     <div class="section-title"><div><h2>資料來源</h2><p>${state.database.sources.length} 筆；來源頁存在不等於所有內容已驗證</p></div></div><div class="panel source-list">${sourceRows()}</div>
@@ -353,7 +373,7 @@ function minePage() {
 function renderPage() {
   const content = document.querySelector('#content');
   if (!content) return;
-  content.innerHTML = ({ home: homePage, catalog: catalogPage, guides: guidesPage, market: marketPage, mine: minePage })[state.tab]();
+  content.innerHTML = ({ home: homePage, catalog: catalogPage, guides: guidesPage, market: marketPage, mine: minePage, beta: betaPage })[state.tab]?.() || homePage();
 }
 
 function render() {
@@ -543,15 +563,22 @@ function priceDialog() {
 }
 
 function evidenceDialog() {
+  const draft = state.evidenceDraft || {};
   const first = allCatalog()[0];
-  const selectedTarget = state.evidenceTarget || (first ? recordRef(first.collection, first.record.id) : '');
+  const selectedTarget = state.evidenceTarget || draft.targetRef || (first ? recordRef(first.collection, first.record.id) : '');
   const selectedParsed = parseRecordRef(selectedTarget);
   const targetOptions = allCatalog().map(({ collection, record }) => {
     const ref = recordRef(collection, record.id);
     return `<option value="${e(ref)}" ${selectedTarget === ref ? 'selected' : ''}>${TYPE_META[collection].short}｜${e(record.name)} · ${e(record.id)}</option>`;
   }).join('');
-  const fieldOptions = Object.entries(FIELD_DEFINITIONS[selectedParsed?.collection] || {}).map(([key, label]) => `<option value="${e(key)}">${e(label)}</option>`).join('');
-  return `<div class="overlay" data-backdrop><div class="modal modal-wide" role="dialog" aria-modal="true" aria-label="提交玩家證據"><div class="modal-top"><div><h2>📷 提交玩家證據</h2><p class="explain">人工核對流程：先選明確欄位並附原始畫面，待審核採用後才寫入資料；系統不會假裝自動 OCR。</p></div><button class="close" data-close>×</button></div><form id="evidenceForm"><div class="form-group"><label>圖鑑條目 *</label><select id="evidenceTargetSelect" name="targetRef" required>${targetOptions}</select></div><div class="form-grid"><div class="form-group"><label>查證欄位 *</label><select name="fieldKey" required>${fieldOptions}</select></div><div class="form-group"><label>證據類型 *</label><select name="evidenceType">${EVIDENCE_TYPES.map((type) => `<option>${e(type)}</option>`).join('')}</select></div></div><div class="form-group"><label>觀察到的值／關聯 ID *</label><textarea name="claimValue" required maxlength="5000" placeholder="數值欄位填數字；掉落物、地圖等關聯填穩定 ID；物件欄位填 JSON。"></textarea><div class="form-hint">只填畫面可確認內容，不推算掉落率。關聯採用後會附加，不覆蓋既有清單。</div></div><div class="form-grid"><div class="form-group"><label>回報者代稱 *</label><input name="reporterAlias" required maxlength="80" autocomplete="nickname"></div><div class="form-group"><label>遊戲內觀察日期 *</label><input name="observedAt" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}" required></div></div><div class="form-group"><label>遊戲內截圖（PNG／JPEG／WebP，建議 1.5 MB 以下）</label><input name="screenshot" type="file" accept="image/png,image/jpeg,image/webp"><div class="form-hint">截圖只存於此瀏覽器及匯出備份；請先遮蔽個人資訊。</div></div><div class="form-group"><label>外部證據網址（選填）</label><input name="evidenceUrl" type="url" placeholder="https://…"></div><div class="form-group"><label>補充說明</label><textarea name="reviewNotes" maxlength="1000" placeholder="畫面位置、伺服器或重現方式"></textarea></div><div class="form-actions"><button class="btn" type="button" data-close>取消</button><button class="btn primary" type="submit">送交待審核區</button></div></form></div></div>`;
+  const fieldOptions = Object.entries(FIELD_DEFINITIONS[selectedParsed?.collection] || {}).map(([key, label]) => `<option value="${e(key)}" ${draft.fieldKey === key ? 'selected' : ''}>${e(label)}</option>`).join('');
+  return `<div class="overlay" data-backdrop><div class="modal modal-wide" role="dialog" aria-modal="true" aria-label="提交玩家證據"><div class="modal-top"><div><h2>📷 建立本機玩家回報</h2><p class="explain">人工核對流程：先選明確欄位並附原始畫面，下一步預覽；確認後只寫入目前瀏覽器的待審核區，不會送到雲端，也不會自動 OCR。</p></div><button class="close" data-close>×</button></div><form id="evidenceForm"><div class="form-group"><label>圖鑑條目 *</label><select id="evidenceTargetSelect" name="targetRef" required>${targetOptions}</select></div><div class="form-grid"><div class="form-group"><label>查證欄位 *</label><select name="fieldKey" required>${fieldOptions}</select></div><div class="form-group"><label>證據類型 *</label><select name="evidenceType">${EVIDENCE_TYPES.map((type) => `<option ${draft.evidenceType === type ? 'selected' : ''}>${e(type)}</option>`).join('')}</select></div></div><div class="form-group"><label>觀察到的值／關聯 ID *</label><textarea name="claimValue" required maxlength="5000" placeholder="數值欄位填數字；掉落物、地圖等關聯填穩定 ID；物件欄位填 JSON。">${e(draft.claimValue || '')}</textarea><div class="form-hint">只填畫面可確認內容，不推算掉落率。關聯採用後會附加，不覆蓋既有清單。</div></div><div class="form-grid"><div class="form-group"><label>回報者代稱 *</label><input name="reporterAlias" required maxlength="80" autocomplete="nickname" value="${e(draft.reporterAlias || '')}"></div><div class="form-group"><label>遊戲內觀察日期 *</label><input name="observedAt" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${e((draft.observedAt || new Date().toISOString()).slice(0, 10))}" required></div></div><div class="form-group"><label>遊戲內截圖（PNG／JPEG／WebP，建議 1.5 MB 以下）</label><input name="screenshot" type="file" accept="image/png,image/jpeg,image/webp"><div class="form-hint">截圖只存於此瀏覽器及匯出檔；請先遮蔽角色名、聊天與其他個人資訊。${draft.screenshotDataUrl ? ' 已保留上一個預覽的截圖；重新選檔才會取代。' : ''}</div>${draft.screenshotDataUrl ? `<img class="evidence-image draft-image" src="${e(draft.screenshotDataUrl)}" alt="待送出截圖預覽">` : ''}</div><div class="form-group"><label>外部證據網址（選填）</label><input name="evidenceUrl" type="url" placeholder="https://…" value="${e(draft.evidenceUrl || '')}"></div><div class="form-group"><label>補充說明</label><textarea name="reviewNotes" maxlength="1000" placeholder="畫面位置、伺服器或重現方式">${e(draft.reviewNotes || '')}</textarea></div><div class="form-actions"><button class="btn" type="button" data-close>取消</button><button class="btn primary" type="submit">下一步：預覽回報</button></div></form></div></div>`;
+}
+
+function evidencePreviewDialog() {
+  const record = state.pendingEvidence;
+  if (!record) return '';
+  return `<div class="overlay" data-backdrop><div class="modal modal-wide" role="dialog" aria-modal="true" aria-label="預覽玩家回報"><div class="modal-top"><div><h2>🔎 送出前預覽</h2><p class="explain">請確認目標、欄位、內容、日期與截圖都正確。按下確認只會保存到這個瀏覽器的待審核區。</p></div><button class="close" data-close>×</button></div><div class="notice warning compact"><strong>尚未送出</strong><span>目前沒有共用後端；完成後仍需「匯出玩家回報 JSON」並透過管理者公告的外部管道傳送。</span></div><div class="evidence-preview">${evidenceCard(record)}</div><div class="form-actions"><button class="btn" data-edit-evidence>返回修改</button><button class="btn primary" data-confirm-evidence>確認存入待審核區</button></div></div></div>`;
 }
 
 function importDialog() {
@@ -574,6 +601,7 @@ function renderModal() {
   else if (state.dialog === 'entry') host.innerHTML = entryDialog();
   else if (state.dialog === 'price') host.innerHTML = priceDialog();
   else if (state.dialog === 'evidence') host.innerHTML = evidenceDialog();
+  else if (state.dialog === 'evidence-preview') host.innerHTML = evidencePreviewDialog();
   else if (state.dialog === 'import') host.innerHTML = importDialog();
   else host.innerHTML = '';
 }
@@ -585,6 +613,8 @@ function closeModal() {
   state.pendingImport = null;
   state.importReport = null;
   state.evidenceTarget = '';
+  state.evidenceDraft = null;
+  state.pendingEvidence = null;
   renderModal();
 }
 
@@ -749,15 +779,15 @@ function readScreenshot(file) {
   });
 }
 
-async function saveEvidence(formElement) {
+async function prepareEvidence(formElement) {
   const form = new FormData(formElement);
   const targetRef = String(form.get('targetRef') || '');
   const parsed = parseRecordRef(targetRef);
   if (!parsed || !getRecord(parsed.collection, parsed.id)) throw new Error('請選擇有效的圖鑑條目');
   const screenshot = form.get('screenshot');
-  const screenshotDataUrl = screenshot instanceof File ? await readScreenshot(screenshot) : '';
+  const screenshotDataUrl = screenshot instanceof File && screenshot.size ? await readScreenshot(screenshot) : state.evidenceDraft?.screenshotDataUrl || '';
   const evidenceUrl = String(form.get('evidenceUrl') || '').trim();
-  const sourceId = evidenceUrl ? createSource(evidenceUrl, '玩家證據來源') : null;
+  if (evidenceUrl && !safeUrl(evidenceUrl)) throw new Error('證據網址只接受 http 或 https');
   const record = createEvidenceRecord({
     targetRef,
     fieldKey: form.get('fieldKey'),
@@ -769,15 +799,31 @@ async function saveEvidence(formElement) {
     reporterAlias: form.get('reporterAlias'),
     observedAt: form.get('observedAt'),
     reviewNotes: form.get('reviewNotes'),
-    sourceId
+    sourceId: null
   });
-  state.database.evidence.unshift(record);
-  persistDatabase();
+  state.evidenceDraft = { ...record, evidenceUrl };
+  state.pendingEvidence = record;
+  state.dialog = 'evidence-preview';
+  renderModal();
+}
+
+function confirmEvidence() {
+  if (!state.pendingEvidence) return;
+  const before = JSON.stringify(state.database);
+  try {
+    const record = { ...state.pendingEvidence };
+    record.sourceId = record.evidenceUrl ? createSource(record.evidenceUrl, '玩家證據來源') : null;
+    state.database.evidence.unshift(record);
+    persistDatabase();
+  } catch (error) {
+    state.database = JSON.parse(before);
+    throw error;
+  }
   state.evidenceTarget = '';
   closeModal();
   state.tab = 'mine';
   render();
-  notify('證據已送交待審核區');
+  notify('回報已保存於本機待審核區；尚未傳送到雲端');
 }
 
 function reviewEvidence(id, reviewStatus) {
@@ -794,18 +840,37 @@ function reviewEvidence(id, reviewStatus) {
   } catch (error) { notify(error.message, 'error'); }
 }
 
-function exportData() {
-  const payload = makeBackup(state.database, state.favorites);
+function downloadJson(payload, filename, message) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `stardex-maplestar-v${SCHEMA_VERSION}-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 2000);
-  notify('完整備份檔已產生');
+  notify(message);
+}
+
+function exportData() {
+  downloadJson(
+    makeBackup(state.database, state.favorites),
+    `stardex-maplestar-app-v${APP_VERSION}-schema-v${SCHEMA_VERSION}-${new Date().toISOString().slice(0, 10)}.json`,
+    '完整備份檔已產生'
+  );
+}
+
+function exportEvidenceData() {
+  if (!state.database.evidence.length) {
+    notify('目前沒有玩家回報可匯出', 'error');
+    return;
+  }
+  downloadJson(
+    makeEvidenceBundle(state.database),
+    `stardex-player-reports-${new Date().toISOString().slice(0, 10)}.json`,
+    '玩家回報 JSON 已產生；請透過管理者指定管道傳送'
+  );
 }
 
 function downloadCsvTemplate() {
@@ -891,6 +956,11 @@ document.addEventListener('click', (event) => {
     return;
   }
   if (button.dataset.tab) return navigate(button.dataset.tab);
+  if (button.dataset.install !== undefined) { requestInstall(); return; }
+  if (button.dataset.applyUpdate !== undefined) {
+    state.waitingWorker?.postMessage({ type: 'SKIP_WAITING' });
+    return;
+  }
   if (button.dataset.kind) return navigate('catalog', button.dataset.kind);
   if (button.dataset.filter) { state.kind = button.dataset.filter; updateCatalogResults(); return; }
   if (button.dataset.detail) { state.detail = button.dataset.detail; state.dialog = null; renderModal(); return; }
@@ -908,9 +978,20 @@ document.addEventListener('click', (event) => {
   }
   if (button.dataset.deleteEntry) return deleteEntry(button.dataset.deleteEntry);
   if (button.dataset.export !== undefined) return exportData();
+  if (button.dataset.exportEvidence !== undefined) return exportEvidenceData();
   if (button.dataset.csvTemplate !== undefined) return downloadCsvTemplate();
   if (button.dataset.import !== undefined) { document.querySelector('#fileImport')?.click(); return; }
   if (button.dataset.applyImport !== undefined) return applyImport();
+  if (button.dataset.editEvidence !== undefined) {
+    state.evidenceTarget = state.pendingEvidence?.targetRef || '';
+    state.dialog = 'evidence';
+    renderModal();
+    return;
+  }
+  if (button.dataset.confirmEvidence !== undefined) {
+    try { confirmEvidence(); } catch (error) { notify(error.message, 'error'); }
+    return;
+  }
   if (button.dataset.evidenceTarget) {
     state.evidenceTarget = button.dataset.evidenceTarget;
     state.detail = null;
@@ -954,7 +1035,7 @@ document.addEventListener('change', (event) => {
 document.addEventListener('submit', (event) => {
   event.preventDefault();
   if (event.target.id === 'evidenceForm') {
-    saveEvidence(event.target).catch((error) => notify(error.message, 'error'));
+    prepareEvidence(event.target).catch((error) => notify(error.message, 'error'));
     return;
   }
   try {
@@ -969,6 +1050,68 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeModal();
 });
 
+async function requestInstall() {
+  if (window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+    notify('StarDex 已用安裝模式開啟');
+    return;
+  }
+  if (state.installPrompt) {
+    const promptEvent = state.installPrompt;
+    state.installPrompt = null;
+    await promptEvent.prompt();
+    const choice = await promptEvent.userChoice;
+    notify(choice.outcome === 'accepted' ? '已接受安裝；請依瀏覽器提示完成' : '已取消安裝');
+    if (state.tab === 'home' || state.tab === 'beta') renderPage();
+    return;
+  }
+  navigate('beta');
+  window.setTimeout(() => document.querySelector('#install-guide')?.scrollIntoView({ behavior: 'smooth' }), 0);
+  notify(/iphone|ipad|ipod/i.test(navigator.userAgent) ? '請用 Safari 的分享選單選擇「加入主畫面」' : '請使用瀏覽器選單的「安裝應用程式」或「加入主畫面」');
+}
+
+function showUpdateBanner(worker) {
+  if (!worker) return;
+  state.waitingWorker = worker;
+  const banner = document.querySelector('#updateBanner');
+  if (banner) banner.hidden = false;
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
+  try {
+    const registration = await navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' });
+    if (registration.waiting && navigator.serviceWorker.controller) showUpdateBanner(registration.waiting);
+    registration.addEventListener('updatefound', () => {
+      const worker = registration.installing;
+      worker?.addEventListener('statechange', () => {
+        if (worker.state === 'installed' && navigator.serviceWorker.controller) showUpdateBanner(worker);
+      });
+    });
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') registration.update().catch(() => {});
+    });
+  } catch (error) {
+    console.warn('[StarDex] Service Worker 註冊失敗；線上功能仍可使用', error);
+  }
+}
+
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  state.installPrompt = event;
+  if (state.database && (state.tab === 'home' || state.tab === 'beta')) renderPage();
+});
+
+window.addEventListener('appinstalled', () => {
+  state.installPrompt = null;
+  notify('StarDex 已安裝到此裝置');
+});
+
 async function start() {
   try {
     const response = await fetch('./data/maplestar.seed.json', { cache: 'no-store' });
@@ -978,8 +1121,11 @@ async function start() {
     if (!seedValidation.valid) throw new Error(`內建資料驗證失敗：${seedValidation.errors[0]}`);
     const loaded = loadAppData(seed);
     state.database = loaded.database;
+    state.datasetUpdatedAt = seed.meta.updatedAt;
     state.favorites = loaded.favorites;
     state.migration = loaded.migration;
+    const requestedView = new URLSearchParams(location.search).get('view');
+    if (['home', 'catalog', 'guides', 'market', 'mine', 'beta'].includes(requestedView)) state.tab = requestedView;
     render();
     window.__STARDEX_TEST__ = {
       getState: () => ({ database: state.database, favorites: state.favorites, tab: state.tab }),
@@ -989,7 +1135,9 @@ async function start() {
       reverseSources: (itemId) => ({ monsters: reverseMonsterIds(itemId), bosses: reverseBossIds(itemId), rewardQuests: reverseQuestIds(itemId), requiredByQuests: reverseQuestRequirementIds(itemId) }),
       openDetail: (collection, id) => { state.detail = recordRef(collection, id); renderModal(); },
       inspectImportObject: (object) => parseImportPayload(object, state.database),
-      inspectCsv: (csv) => parseCsvImport(csv, state.database)
+      inspectCsv: (csv) => parseCsvImport(csv, state.database),
+      evidenceBundle: () => makeEvidenceBundle(state.database),
+      appVersion: APP_VERSION
     };
   } catch (error) {
     state.fatalError = error.message;
@@ -999,7 +1147,4 @@ async function start() {
 }
 
 start();
-
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch((error) => console.warn('[StarDex] Service Worker 註冊失敗', error)));
-}
+window.addEventListener('load', registerServiceWorker);

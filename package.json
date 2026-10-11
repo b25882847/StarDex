@@ -1,10 +1,14 @@
 {
   "name": "stardex-maplestar-atlas",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "check:syntax": "node scripts/check-syntax.mjs",
+    "build": "node scripts/build.mjs",
+    "validate:public": "node scripts/validate-public.mjs",
+    "check": "npm test && npm run check:syntax && npm run build && npm run validate:public",
     "serve": "npx serve ."
   }
 }
