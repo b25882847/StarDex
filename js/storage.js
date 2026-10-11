@@ -8,9 +8,11 @@ import {
   validateDatabase
 } from './schema.js';
 
-export const DATABASE_KEY = 'stardex.database.v2';
-export const FAVORITES_KEY = 'stardex.favorites.v2';
+export const DATABASE_KEY = 'stardex.database.v3';
+export const FAVORITES_KEY = 'stardex.favorites.v3';
 export const LEGACY_KEYS = {
+  databaseV2: 'stardex.database.v2',
+  favoritesV2: 'stardex.favorites.v2',
   entries: 'stardex.user.v1',
   prices: 'stardex.prices.v1',
   favorites: 'stardex.fav.v1'
@@ -86,6 +88,7 @@ function sourceForLegacyUrl(database, url, date) {
     checkedAt: text(date, 20) || new Date().toISOString().slice(0, 10),
     verificationStatus: '待驗證',
     notes: '由 StarDex v1 自建條目保留；內容未經系統審核。',
+    sourceType: '玩家證據',
     userCreated: true
   });
   return [id];
@@ -237,6 +240,42 @@ export function migrateLegacyPayload(database, payload = {}) {
   return { database: result, favorites: [...new Set(favorites)], counts: { entries: migratedEntries.length, prices: prices.length } };
 }
 
+function migrateVerificationStatus(value, isOfficial = false) {
+  if (value === '測試資料') return '測試資料';
+  if (value === '官方已確認' || value === '玩家證據已驗證' || value === '待驗證') return value;
+  if (value === '已驗證' && isOfficial) return '官方已確認';
+  return '待驗證';
+}
+
+export function migrateV2Database(database) {
+  const result = clone(database || {});
+  result.schemaVersion = SCHEMA_VERSION;
+  for (const collection of COLLECTIONS) {
+    if (!Array.isArray(result[collection])) result[collection] = [];
+  }
+  for (const collection of CATALOG_COLLECTIONS) {
+    result[collection] = result[collection].map((record) => ({
+      ...record,
+      verificationStatus: migrateVerificationStatus(record.verificationStatus, record.userCreated === false)
+    }));
+  }
+  result.sources = result.sources.map((source) => ({
+    ...source,
+    verificationStatus: migrateVerificationStatus(source.verificationStatus, source.userCreated === false),
+    sourceType: source.sourceType || (source.userCreated === false ? '楓星官方' : '玩家證據'),
+    userCreated: source.userCreated === true
+  }));
+  result.evidence = Array.isArray(result.evidence) ? result.evidence : [];
+  result.meta = {
+    ...(result.meta || {}),
+    product: 'MapleStar',
+    locale: result.meta?.locale || 'zh-Hant',
+    migratedFromSchema: 2,
+    migratedAt: new Date().toISOString()
+  };
+  return result;
+}
+
 function mergeSeedWithStored(seed, stored) {
   const merged = clone(seed);
   for (const collection of COLLECTIONS) {
@@ -258,9 +297,10 @@ function mergeSeedWithStored(seed, stored) {
 
 export function loadAppData(seed, storage = globalThis.localStorage) {
   const stored = read(storage, DATABASE_KEY, null);
-  const savedFavorites = read(storage, FAVORITES_KEY, []);
+  const v2Stored = read(storage, LEGACY_KEYS.databaseV2, null);
+  const savedFavorites = read(storage, FAVORITES_KEY, null) ?? read(storage, LEGACY_KEYS.favoritesV2, []);
   let database;
-  let migration = { entries: 0, prices: 0 };
+  let migration = { entries: 0, prices: 0, schema: null };
   let favorites = Array.isArray(savedFavorites) ? savedFavorites : [];
 
   if (stored && stored.schemaVersion === SCHEMA_VERSION) {
@@ -269,6 +309,12 @@ export function loadAppData(seed, storage = globalThis.localStorage) {
       throw new Error(`本機資料庫格式損壞：${validation.errors.slice(0, 3).join('；')}`);
     }
     database = mergeSeedWithStored(seed, stored);
+  } else if (v2Stored?.schemaVersion === 2) {
+    const migratedV2 = migrateV2Database(v2Stored);
+    const validation = validateDatabase(migratedV2, { allowTestData: true });
+    if (!validation.valid) throw new Error(`v2 本機資料無法遷移：${validation.errors.slice(0, 3).join('；')}`);
+    database = mergeSeedWithStored(seed, migratedV2);
+    migration.schema = 2;
   } else {
     const legacyPayload = {
       entries: read(storage, LEGACY_KEYS.entries, []),
@@ -278,7 +324,7 @@ export function loadAppData(seed, storage = globalThis.localStorage) {
     const migrated = migrateLegacyPayload(seed, legacyPayload);
     database = migrated.database;
     favorites = [...new Set([...favorites, ...migrated.favorites])];
-    migration = migrated.counts;
+    migration = { ...migrated.counts, schema: 1 };
   }
 
   const existingRefs = new Set(CATALOG_COLLECTIONS.flatMap((collection) => database[collection].map((record) => recordRef(collection, record.id))));
@@ -315,26 +361,65 @@ export function parseImportPayload(raw, currentDatabase) {
   let candidate;
   let favorites = [];
   let migrated = false;
+  let migratedFromSchema = null;
   if (raw?.format === 'StarDexBackup' && raw.version === 1) {
     const result = migrateLegacyPayload(currentDatabase, raw);
     candidate = result.database;
     favorites = result.favorites;
     migrated = true;
+    migratedFromSchema = 1;
   } else if (raw?.format === 'StarDexBackup' && raw.schemaVersion === SCHEMA_VERSION) {
     candidate = raw.database;
     favorites = Array.isArray(raw.favorites) ? raw.favorites : [];
+  } else if (raw?.format === 'StarDexBackup' && raw.schemaVersion === 2) {
+    candidate = migrateV2Database(raw.database);
+    favorites = Array.isArray(raw.favorites) ? raw.favorites : [];
+    migrated = true;
+    migratedFromSchema = 2;
   } else if (raw?.schemaVersion === SCHEMA_VERSION) {
     candidate = raw;
     favorites = Array.isArray(raw.favorites) ? raw.favorites : [];
+  } else if (raw?.schemaVersion === 2) {
+    candidate = migrateV2Database(raw);
+    favorites = Array.isArray(raw.favorites) ? raw.favorites : [];
+    migrated = true;
+    migratedFromSchema = 2;
   } else {
     return {
       valid: false,
-      errors: [`無法辨識的備份格式或 schema version；目前只接受 v1 舊備份與 schema v${SCHEMA_VERSION}`],
+      errors: [`無法辨識的備份格式或 schema version；目前只接受 v1、schema v2 舊資料與 schema v${SCHEMA_VERSION}`],
       warnings: []
     };
   }
   const validation = validateDatabase(candidate);
-  return { ...validation, database: candidate, favorites, migrated };
+  return {
+    ...validation,
+    database: candidate,
+    favorites,
+    migrated,
+    migratedFromSchema,
+    format: 'JSON',
+    changes: candidate ? summarizeImportChanges(currentDatabase, candidate) : null
+  };
+}
+
+export function summarizeImportChanges(currentDatabase, candidate) {
+  const collections = {};
+  const totals = { added: 0, updated: 0, unchanged: 0, protected: 0 };
+  for (const collection of COLLECTIONS) {
+    const currentById = new Map((currentDatabase?.[collection] || []).map((record) => [record.id, record]));
+    const summary = { added: 0, updated: 0, unchanged: 0, protected: 0 };
+    for (const incoming of candidate?.[collection] || []) {
+      const current = currentById.get(incoming.id);
+      if (!current) summary.added += 1;
+      else if (JSON.stringify(current) === JSON.stringify(incoming)) summary.unchanged += 1;
+      else if (current.userCreated === false) summary.protected += 1;
+      else summary.updated += 1;
+    }
+    collections[collection] = summary;
+    for (const key of Object.keys(totals)) totals[key] += summary[key];
+  }
+  return { collections, totals };
 }
 
 export function mergeImportedData(currentDatabase, importedDatabase, currentFavorites = [], importedFavorites = []) {
@@ -345,7 +430,7 @@ export function mergeImportedData(currentDatabase, importedDatabase, currentFavo
     for (const incoming of importedDatabase[collection]) {
       const current = byId.get(incoming.id);
       if (current?.userCreated === false) {
-        if (incoming.userCreated !== false) warnings.push(`略過 ${collection}/${incoming.id}：不可用匯入資料覆寫內建條目`);
+        if (JSON.stringify(current) !== JSON.stringify(incoming)) warnings.push(`略過 ${collection}/${incoming.id}：匯入資料不可覆寫內建條目`);
         continue;
       }
       byId.set(incoming.id, clone(incoming));
@@ -388,8 +473,263 @@ export function createUserRecord(collection, values) {
   }
 }
 
+export function createEvidenceRecord(values) {
+  const rawUrl = text(values.evidenceUrl, 2000);
+  const evidenceUrl = rawUrl ? safeUrl(rawUrl) : '';
+  if (rawUrl && !evidenceUrl) throw new Error('證據網址只接受 http 或 https');
+  const screenshotDataUrl = String(values.screenshotDataUrl || '');
+  if (screenshotDataUrl.length > 2000000) throw new Error('截圖檔案過大，請壓縮至約 1.5 MB 以下');
+  return {
+    id: safeId(values.id || `evidence-${Date.now().toString(36)}-${hash(Math.random())}`, 'evidence'),
+    targetRef: text(values.targetRef, 260),
+    field: text(values.field, 120),
+    claimValue: text(values.claimValue, 5000),
+    evidenceType: text(values.evidenceType, 40) || '玩家填寫',
+    evidenceUrl,
+    screenshotDataUrl,
+    reporterAlias: text(values.reporterAlias, 80),
+    observedAt: safeDate(values.observedAt || Date.now()),
+    submittedAt: safeDate(values.submittedAt || Date.now()),
+    reviewStatus: text(values.reviewStatus, 20) || '待審核',
+    reviewNotes: text(values.reviewNotes, 1000),
+    reviewedAt: values.reviewedAt ? safeDate(values.reviewedAt) : '',
+    sourceId: values.sourceId || null,
+    userCreated: true
+  };
+}
+
+function parseCsvRows(input) {
+  const source = String(input || '').replace(/^\uFEFF/, '');
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (quoted) {
+      if (char === '"' && source[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else if (char === '"') quoted = false;
+      else field += char;
+    } else if (char === '"') quoted = true;
+    else if (char === ',') {
+      row.push(field);
+      field = '';
+    } else if (char === '\n') {
+      row.push(field.replace(/\r$/, ''));
+      if (row.some((value) => value.trim() !== '')) rows.push(row);
+      row = [];
+      field = '';
+    } else field += char;
+  }
+  if (quoted) throw new Error('CSV 含有未結束的雙引號欄位');
+  row.push(field.replace(/\r$/, ''));
+  if (row.some((value) => value.trim() !== '')) rows.push(row);
+  return rows;
+}
+
+function csvList(value) {
+  return text(value, 5000).split('|').map((entry) => entry.trim()).filter(Boolean);
+}
+
+function csvBoolean(value) {
+  return ['1', 'true', 'yes', 'y', '是'].includes(String(value || '').trim().toLocaleLowerCase('zh-Hant'));
+}
+
+const CSV_ARRAY_FIELDS = [
+  'elements', 'mapIds', 'dropItemIds', 'adjacentMapIds', 'monsterIds', 'npcIds',
+  'advancementStages', 'weapons', 'skillIds', 'trainingGuideIds', 'prerequisiteSkillIds',
+  'prerequisiteQuestIds', 'requiredItemIds', 'rewardItemIds', 'entryMapIds', 'requiredQuestIds',
+  'jobIds', 'itemIds', 'sourceIds'
+];
+
+export function parseCsvImport(raw, currentDatabase) {
+  const errors = [];
+  const warnings = [];
+  let rows;
+  try {
+    rows = parseCsvRows(raw);
+  } catch (error) {
+    return { valid: false, errors: [`CSV 解析失敗：${error.message}`], warnings, format: 'CSV' };
+  }
+  if (rows.length < 2) return { valid: false, errors: ['CSV 必須包含標題列及至少一筆資料'], warnings, format: 'CSV' };
+  const headers = rows[0].map((value) => value.trim());
+  if (!headers.includes('collection') || !headers.includes('id')) {
+    return { valid: false, errors: ['CSV 標題列必須包含 collection 與 id'], warnings, format: 'CSV' };
+  }
+  const duplicateHeaders = headers.filter((header, index) => header && headers.indexOf(header) !== index);
+  if (duplicateHeaders.length) errors.push(`CSV 標題重複：${[...new Set(duplicateHeaders)].join('、')}`);
+
+  const candidate = clone(currentDatabase);
+  const seen = new Set();
+  const previewRows = [];
+  const allowedHeaders = new Set([
+    'collection', 'id', 'name', 'description', 'level', 'requiredLevel', 'recommendedLevel', 'maxLevel',
+    'hp', 'mp', 'experience', 'elements', 'category', 'stats', 'acquisition', 'tradeInfo', 'region',
+    'advancementStages', 'weapons', 'features', 'recommendedBuild', 'rewardsText', 'entryConditions',
+    'respawnOrLimits', 'guideType', 'content', 'levelMax', 'jobId', 'verificationStatus', 'verifiedAt',
+    'testData', 'sourceUrl', 'sourceName', ...CSV_ARRAY_FIELDS
+  ]);
+  for (const header of headers) if (header && !allowedHeaders.has(header)) warnings.push(`忽略未知 CSV 欄位「${header}」`);
+
+  for (let offset = 1; offset < rows.length; offset += 1) {
+    const line = offset + 1;
+    const cells = rows[offset];
+    const rowData = Object.fromEntries(headers.map((header, index) => [header, cells[index] ?? '']));
+    const collection = text(rowData.collection, 40);
+    const id = text(rowData.id, 120);
+    if (!CATALOG_COLLECTIONS.includes(collection)) {
+      errors.push(`CSV 第 ${line} 列：collection「${collection || '空白'}」不支援`);
+      continue;
+    }
+    if (!/^[a-z0-9][a-z0-9._:-]{1,119}$/i.test(id)) {
+      errors.push(`CSV 第 ${line} 列：id 必須是 2–120 字元的穩定 ID`);
+      continue;
+    }
+    if (!text(rowData.name, 100)) {
+      errors.push(`CSV 第 ${line} 列：name 不可空白`);
+      continue;
+    }
+    const numericFields = ['level', 'requiredLevel', 'recommendedLevel', 'maxLevel', 'hp', 'mp', 'experience', 'levelMax'];
+    const invalidNumber = numericFields.find((field) => rowData[field] !== undefined && String(rowData[field]).trim() !== '' && (!Number.isFinite(Number(rowData[field])) || Number(rowData[field]) < 0));
+    if (invalidNumber) {
+      errors.push(`CSV 第 ${line} 列：${invalidNumber} 必須是非負數或留空`);
+      continue;
+    }
+    const booleanText = String(rowData.testData || '').trim().toLocaleLowerCase('zh-Hant');
+    if (booleanText && !['0', '1', 'true', 'false', 'yes', 'no', 'y', 'n', '是', '否'].includes(booleanText)) {
+      errors.push(`CSV 第 ${line} 列：testData 只接受 true／false、1／0、yes／no 或是／否`);
+      continue;
+    }
+    const rowKey = `${collection}:${id}`;
+    if (seen.has(rowKey)) {
+      errors.push(`CSV 第 ${line} 列：檔案內重複 ID「${rowKey}」`);
+      continue;
+    }
+    seen.add(rowKey);
+    const current = candidate[collection].find((record) => record.id === id);
+    if (current?.userCreated === false) {
+      errors.push(`CSV 第 ${line} 列：不可覆寫內建條目「${rowKey}」`);
+      continue;
+    }
+
+    const values = { ...rowData, id, name: rowData.name, description: rowData.description };
+    values.level = rowData.level || rowData.requiredLevel || rowData.recommendedLevel || rowData.maxLevel || '';
+    for (const field of CSV_ARRAY_FIELDS) values[field] = csvList(rowData[field]);
+    values.testData = csvBoolean(rowData.testData);
+    values.verificationStatus = values.testData ? '測試資料' : '待驗證';
+    if (rowData.verificationStatus && !['待驗證', '測試資料'].includes(rowData.verificationStatus)) {
+      warnings.push(`CSV 第 ${line} 列：玩家匯入資料不可自行標示「${rowData.verificationStatus}」，已改為待驗證`);
+    }
+    if (rowData.stats) {
+      try {
+        const stats = JSON.parse(rowData.stats);
+        if (!stats || typeof stats !== 'object' || Array.isArray(stats)) throw new Error('必須是物件');
+        values.stats = stats;
+      } catch (error) {
+        errors.push(`CSV 第 ${line} 列：stats 必須是 JSON 物件（${error.message}）`);
+        continue;
+      }
+    } else values.stats = {};
+    if (collection === 'guides') values.levelRange = { min: numberOrNull(values.level), max: numberOrNull(rowData.levelMax) };
+
+    const rawSourceUrl = text(rowData.sourceUrl, 2000);
+    if (rawSourceUrl) {
+      const sourceUrl = safeUrl(rawSourceUrl);
+      if (!sourceUrl) {
+        errors.push(`CSV 第 ${line} 列：sourceUrl 只接受 http 或 https`);
+        continue;
+      }
+      let source = candidate.sources.find((record) => record.url === sourceUrl);
+      if (!source) {
+        source = {
+          id: `source-user-csv-${hash(sourceUrl)}`,
+          name: text(rowData.sourceName, 160) || `CSV 玩家來源 ${new URL(sourceUrl).hostname}`,
+          url: sourceUrl,
+          version: '玩家回報',
+          checkedAt: '',
+          verificationStatus: '待驗證',
+          notes: '由 CSV 匯入建立，尚待審核。',
+          sourceType: '玩家證據',
+          userCreated: true
+        };
+        candidate.sources.push(source);
+      }
+      values.sourceIds = [...new Set([...values.sourceIds, source.id])];
+    }
+
+    const record = createUserRecord(collection, values);
+    const at = candidate[collection].findIndex((entry) => entry.id === id);
+    if (at >= 0) candidate[collection][at] = record;
+    else candidate[collection].push(record);
+    previewRows.push({ line, collection, id, name: record.name, action: current ? '更新' : '新增' });
+  }
+
+  const validation = validateDatabase(candidate);
+  errors.push(...validation.errors);
+  warnings.push(...validation.warnings);
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings: [...new Set(warnings)],
+    database: candidate,
+    favorites: [],
+    migrated: false,
+    format: 'CSV',
+    rowCount: rows.length - 1,
+    previewRows,
+    changes: summarizeImportChanges(currentDatabase, candidate)
+  };
+}
+
+export function makeCsvTemplate() {
+  const headers = ['collection', 'id', 'name', 'description', 'level', 'hp', 'mp', 'experience', 'category', 'stats', 'acquisition', 'tradeInfo', 'region', 'mapIds', 'dropItemIds', 'monsterIds', 'npcIds', 'adjacentMapIds', 'jobId', 'sourceIds', 'sourceUrl', 'sourceName', 'verificationStatus', 'verifiedAt', 'testData'];
+  const rows = [
+    { collection: 'monsters', id: 'monster-user-example', name: '範例怪物', description: '請填寫楓星實測說明', mapIds: 'map-user-example', dropItemIds: 'item-user-example', sourceUrl: 'https://example.com/evidence', sourceName: '遊戲內截圖', verificationStatus: '待驗證', testData: 'false' },
+    { collection: 'maps', id: 'map-user-example', name: '範例地圖', description: '請填寫楓星實測說明', region: '待驗證區域', monsterIds: 'monster-user-example', verificationStatus: '待驗證', testData: 'false' },
+    { collection: 'items', id: 'item-user-example', name: '範例裝備', description: '請填寫楓星實測說明', category: '裝備', stats: '{}', acquisition: '待驗證', tradeInfo: '待驗證', verificationStatus: '待驗證', testData: 'false' }
+  ];
+  const csvCell = (value) => {
+    const raw = String(value ?? '');
+    return /[",\r\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
+  };
+  return `\uFEFF${[headers, ...rows.map((row) => headers.map((header) => row[header] ?? ''))].map((row) => row.map(csvCell).join(',')).join('\n')}`;
+}
+
 export function databaseStats(database) {
-  return Object.fromEntries(COLLECTIONS.map((collection) => [collection, database[collection]?.length || 0]));
+  const statuses = Object.fromEntries(['官方已確認', '玩家證據已驗證', '待驗證', '測試資料'].map((status) => [status, 0]));
+  const collections = {};
+  let total = 0;
+  for (const collection of CATALOG_COLLECTIONS) {
+    const collectionStatuses = Object.fromEntries(Object.keys(statuses).map((status) => [status, 0]));
+    for (const record of database[collection] || []) {
+      const status = record.testData ? '測試資料' : record.verificationStatus || '待驗證';
+      if (collectionStatuses[status] !== undefined) collectionStatuses[status] += 1;
+      if (statuses[status] !== undefined) statuses[status] += 1;
+      total += 1;
+    }
+    collections[collection] = { total: database[collection]?.length || 0, statuses: collectionStatuses };
+  }
+  const verified = statuses['官方已確認'] + statuses['玩家證據已驗證'];
+  const formalTotal = total - statuses['測試資料'];
+  const evidence = { total: 0, pending: 0, accepted: 0, rejected: 0 };
+  for (const record of database.evidence || []) {
+    evidence.total += 1;
+    if (record.reviewStatus === '待審核') evidence.pending += 1;
+    if (record.reviewStatus === '已採用') evidence.accepted += 1;
+    if (record.reviewStatus === '已拒絕') evidence.rejected += 1;
+  }
+  return {
+    total,
+    formalTotal,
+    verified,
+    verificationRatio: formalTotal ? Math.round((verified / formalTotal) * 1000) / 10 : 0,
+    statuses,
+    collections,
+    evidence,
+    rawCounts: Object.fromEntries(COLLECTIONS.map((collection) => [collection, database[collection]?.length || 0]))
+  };
 }
 
 export { createEmptyDatabase };

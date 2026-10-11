@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const COLLECTIONS = [
   'monsters',
@@ -11,6 +11,7 @@ export const COLLECTIONS = [
   'bosses',
   'guides',
   'prices',
+  'evidence',
   'sources'
 ];
 
@@ -37,10 +38,14 @@ export const TYPE_META = {
   bosses: { label: 'BOSS 資料', short: 'BOSS', icon: '👑', singular: 'BOSS' },
   guides: { label: '練等・攻略', short: '攻略', icon: '🧭', singular: '攻略' },
   prices: { label: '楓幣行情', short: '價格', icon: '💰', singular: '價格' },
+  evidence: { label: '玩家證據', short: '證據', icon: '📷', singular: '證據' },
   sources: { label: '資料來源', short: '來源', icon: '🔗', singular: '來源' }
 };
 
-export const VERIFICATION_STATUSES = ['已驗證', '部分驗證', '待驗證', '測試資料'];
+export const VERIFICATION_STATUSES = ['官方已確認', '玩家證據已驗證', '待驗證', '測試資料'];
+export const SOURCE_TYPES = ['楓星官方', '玩家證據', '其他公開資訊'];
+export const EVIDENCE_TYPES = ['遊戲內截圖', '玩家填寫', '其他公開資料'];
+export const EVIDENCE_STATUSES = ['待審核', '已採用', '已拒絕'];
 
 export const REFERENCE_RULES = {
   monsters: {
@@ -92,6 +97,9 @@ export const REFERENCE_RULES = {
   },
   prices: {
     itemId: { collection: 'items', many: false },
+    sourceId: { collection: 'sources', many: false, optional: true }
+  },
+  evidence: {
     sourceId: { collection: 'sources', many: false, optional: true }
   },
   sources: {}
@@ -159,7 +167,8 @@ function validateRecordShape(collection, record, path, errors) {
     bosses: ['description', 'entryConditions', 'respawnOrLimits'],
     guides: ['guideType', 'content'],
     prices: ['server', 'recordedAt', 'dataSource', 'notes'],
-    sources: ['name', 'url', 'version', 'checkedAt', 'verificationStatus', 'notes']
+    evidence: ['targetRef', 'field', 'claimValue', 'evidenceType', 'evidenceUrl', 'screenshotDataUrl', 'reporterAlias', 'observedAt', 'submittedAt', 'reviewStatus', 'reviewNotes', 'reviewedAt'],
+    sources: ['name', 'url', 'version', 'checkedAt', 'verificationStatus', 'notes', 'sourceType']
   }[collection] || [];
   for (const field of stringFields) {
     if (typeof record[field] !== 'string') pushError(errors, `${path}.${field}`, '必須是字串');
@@ -180,8 +189,8 @@ function validateRecordShape(collection, record, path, errors) {
       if (!isNullableNumber(record.levelRange.max)) pushError(errors, `${path}.levelRange.max`, '必須是非負數或 null');
     }
   }
-  if (collection === 'prices' && typeof record.userCreated !== 'boolean') pushError(errors, `${path}.userCreated`, '必須是布林值');
-  if (!['prices', 'sources'].includes(collection)) {
+  if (['prices', 'sources', 'evidence'].includes(collection) && typeof record.userCreated !== 'boolean') pushError(errors, `${path}.userCreated`, '必須是布林值');
+  if (!['prices', 'sources', 'evidence'].includes(collection)) {
     if (typeof record.testData !== 'boolean') pushError(errors, `${path}.testData`, '必須是布林值');
     if (typeof record.userCreated !== 'boolean') pushError(errors, `${path}.userCreated`, '必須是布林值');
   }
@@ -214,11 +223,37 @@ function validateBasicRecord(collection, record, index, errors) {
     } catch {
       pushError(errors, `${path}.url`, '只接受 http 或 https 網址');
     }
+    if (!SOURCE_TYPES.includes(record.sourceType)) {
+      pushError(errors, `${path}.sourceType`, `只接受 ${SOURCE_TYPES.join('、')}`);
+    }
+  } else if (collection === 'evidence') {
+    if (!hasText(record.targetRef)) pushError(errors, `${path}.targetRef`, '必須指定圖鑑條目');
+    if (!hasText(record.field)) pushError(errors, `${path}.field`, '必須指定查證欄位');
+    if (!hasText(record.claimValue)) pushError(errors, `${path}.claimValue`, '主張內容不可空白');
+    if (!hasText(record.reporterAlias)) pushError(errors, `${path}.reporterAlias`, '回報者代稱不可空白');
+    if (!EVIDENCE_TYPES.includes(record.evidenceType)) pushError(errors, `${path}.evidenceType`, `只接受 ${EVIDENCE_TYPES.join('、')}`);
+    if (!EVIDENCE_STATUSES.includes(record.reviewStatus)) pushError(errors, `${path}.reviewStatus`, `只接受 ${EVIDENCE_STATUSES.join('、')}`);
+    if (record.evidenceUrl) {
+      try {
+        const url = new URL(record.evidenceUrl);
+        if (!['http:', 'https:'].includes(url.protocol)) throw new Error('protocol');
+      } catch {
+        pushError(errors, `${path}.evidenceUrl`, '只接受 http、https 或空白');
+      }
+    }
+    if (record.screenshotDataUrl && !/^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(record.screenshotDataUrl)) {
+      pushError(errors, `${path}.screenshotDataUrl`, '只接受 PNG、JPEG、WebP 圖片資料');
+    }
+    if (record.screenshotDataUrl?.length > 2000000) pushError(errors, `${path}.screenshotDataUrl`, '圖片不得超過 2,000,000 字元');
+    for (const field of ['observedAt', 'submittedAt']) {
+      if (!hasText(record[field]) || Number.isNaN(Date.parse(record[field]))) pushError(errors, `${path}.${field}`, '必須是有效日期');
+    }
+    if (record.reviewedAt && Number.isNaN(Date.parse(record.reviewedAt))) pushError(errors, `${path}.reviewedAt`, '必須是有效日期或空白');
   } else if (!hasText(record.name)) {
     pushError(errors, `${path}.name`, '名稱不可空白');
   }
   validateRecordShape(collection, record, path, errors);
-  if (collection !== 'prices' && record.verificationStatus !== undefined && !VERIFICATION_STATUSES.includes(record.verificationStatus)) {
+  if (!['prices', 'evidence'].includes(collection) && record.verificationStatus !== undefined && !VERIFICATION_STATUSES.includes(record.verificationStatus)) {
     pushError(errors, `${path}.verificationStatus`, `只接受 ${VERIFICATION_STATUSES.join('、')}`);
   }
 }
@@ -297,6 +332,45 @@ export function validateDatabase(database, options = {}) {
         }
       }
     });
+  }
+
+  for (const [index, record] of (database.evidence || []).entries()) {
+    if (!isPlainObject(record)) continue;
+    const separator = String(record.targetRef || '').indexOf(':');
+    const collection = separator > 0 ? record.targetRef.slice(0, separator) : '';
+    const id = separator > 0 ? record.targetRef.slice(separator + 1) : '';
+    if (!CATALOG_COLLECTIONS.includes(collection) || !ids[collection]?.has(id)) {
+      pushError(errors, `evidence[${index}].targetRef`, `找不到圖鑑條目「${record.targetRef || ''}」`);
+    }
+  }
+
+  const acceptedEvidenceTargets = new Set((database.evidence || []).filter((record) => record?.reviewStatus === '已採用').map((record) => record.targetRef));
+  for (const collection of CATALOG_COLLECTIONS) {
+    for (const record of database[collection] || []) {
+      if (record?.userCreated === true && record.verificationStatus === '官方已確認') {
+        pushError(errors, `${collection}.${record.id}.verificationStatus`, '玩家自建資料不可標示為「官方已確認」');
+      }
+      if (record?.userCreated === true && record.verificationStatus === '玩家證據已驗證' && !acceptedEvidenceTargets.has(recordRef(collection, record.id))) {
+        pushError(errors, `${collection}.${record.id}.verificationStatus`, '必須先有至少一筆已採用的玩家證據');
+      }
+    }
+  }
+
+  for (const collection of CATALOG_COLLECTIONS) {
+    const names = new Map();
+    for (const record of database[collection] || []) {
+      const key = String(record?.name || '').trim().toLocaleLowerCase('zh-Hant');
+      if (!key) continue;
+      if (names.has(key) && names.get(key) !== record.id) warnings.push(`${collection}：名稱「${record.name}」同時使用於 ${names.get(key)} 與 ${record.id}`);
+      else names.set(key, record.id);
+    }
+  }
+
+  const evidenceClaims = new Set();
+  for (const record of database.evidence || []) {
+    const key = [record?.targetRef, record?.field, String(record?.claimValue || '').trim().toLocaleLowerCase('zh-Hant'), String(record?.reporterAlias || '').trim().toLocaleLowerCase('zh-Hant')].join('\u0000');
+    if (evidenceClaims.has(key)) warnings.push(`玩家證據：${record.targetRef}/${record.field} 有同一回報者的重複主張`);
+    evidenceClaims.add(key);
   }
 
   if (database.meta?.product && database.meta.product !== 'MapleStar') {

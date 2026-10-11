@@ -110,6 +110,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .tag { display: inline-flex; align-items: center; font-size: 10px; padding: 5px 8px; border-radius: 8px; background: #eff2ff; color: #566ad3; font-weight: 850; white-space: nowrap; }
 .tag.verified { background: #e4f8ee; color: #237f58; }
 .tag.partial { background: #eaf0ff; color: #4b65c1; }
+.tag.player { background: #e8efff; color: #4763bd; }
 .tag.pending { background: #fff3e4; color: #a56624; }
 .tag.test { background: #fff8cf; color: #786516; border: 1px dashed #d3b738; }
 .tag.user { background: #f4edff; color: #7a55a5; }
@@ -159,6 +160,34 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .source-row strong { display: block; font-size: 13px; }
 .source-row small { display: block; color: var(--muted); margin-top: 5px; font-size: 11px; }
 .footnote { margin: 32px 0 0; text-align: center; color: #9eabbc; font-size: 11px; line-height: 1.9; }
+.stats-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.stats-overview > div { border-radius: 13px; background: #f5f7fb; padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+.stats-overview strong { font-size: 21px; color: #2f4367; }
+.stats-overview span { color: var(--muted); font-size: 11px; }
+.table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.stats-table, .preview-table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 12px; }
+.stats-table th, .stats-table td, .preview-table th, .preview-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.stats-table thead th, .preview-table thead th { background: #f5f7fb; color: #64738a; font-size: 11px; }
+.stats-table tbody tr:last-child > *, .preview-table tbody tr:last-child > * { border-bottom: 0; }
+.stats-table tbody th { color: #40516b; }
+.import-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.import-summary span { background: #f5f7fb; border-radius: 11px; padding: 11px; color: var(--muted); font-size: 11px; }
+.import-summary strong { display: block; color: #344866; font-size: 18px; margin-bottom: 2px; }
+.preview-table code { color: #58667b; font-size: 11px; }
+.evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.evidence-grid.compact { grid-template-columns: 1fr; }
+.evidence-card { min-width: 0; border: 1px solid var(--line); border-radius: 15px; background: #fff; padding: 15px; }
+.evidence-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.evidence-head strong, .evidence-head small { display: block; }
+.evidence-head strong { color: #344866; font-size: 13px; }
+.evidence-head small { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.evidence-card > p { color: #52627a; font-size: 12px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.evidence-meta { display: flex; flex-wrap: wrap; gap: 5px 10px; color: #8491a3; font-size: 10px; }
+.evidence-image { display: block; width: 100%; max-height: 260px; object-fit: contain; background: #f4f6fa; border-radius: 10px; margin: 12px 0; }
+.evidence-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.review-note { background: #f7f9fc; border-radius: 9px; padding: 8px; }
+.section-inline { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.section-inline h3 { margin: 0; }
 
 .mobile-bar, .mobile-nav { display: none; }
 .overlay { position: fixed; inset: 0; background: #13233c91; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 22px; backdrop-filter: blur(4px); }
@@ -246,6 +275,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   .category strong { font-size: 14px; }
   .section-title h2 { font-size: 18px; }
   .cards, .grid2, .price-box, .tools { grid-template-columns: 1fr; }
+  .evidence-grid { grid-template-columns: 1fr; }
+  .stats-overview, .import-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .entry { min-height: 180px; padding: 16px; }
   .page-h h1 { font-size: 22px; }
   .toolbar { align-items: stretch; }

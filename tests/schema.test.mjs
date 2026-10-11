@@ -2,20 +2,30 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+  SCHEMA_VERSION,
   recordRef,
   validateDatabase
 } from '../js/schema.js';
 import {
+  DATABASE_KEY,
+  FAVORITES_KEY,
+  LEGACY_KEYS,
   clone,
+  createEvidenceRecord,
+  databaseStats,
+  loadAppData,
   makeBackup,
+  makeCsvTemplate,
   mergeImportedData,
   migrateLegacyPayload,
+  migrateV2Database,
+  parseCsvImport,
   parseImportPayload
 } from '../js/storage.js';
 
 const seed = JSON.parse(fs.readFileSync(new URL('../data/maplestar.seed.json', import.meta.url), 'utf8'));
 
-test('內建 schema v2 資料通過完整驗證', () => {
+test('內建 schema v3 資料通過完整驗證', () => {
   const result = validateDatabase(seed, { allowTestData: true });
   assert.equal(result.valid, true, result.errors.join('\n'));
 });
@@ -68,16 +78,19 @@ test('本次引用的官方來源均已完成內文核對', () => {
     'source-update-2026-05-28',
     'source-update-2026-07-09',
     'source-boss-rewards-2026-07-23',
+    'source-update-2026-07-30',
     'source-update-2026-08-13',
     'source-update-2026-09-28',
     'source-reset-schedule-2026-09-30',
-    'source-update-2026-10-08'
+    'source-update-2026-10-08',
+    'source-maintenance-2026-10-08'
   ];
 
   for (const id of sourceIds) {
     const source = seed.sources.find((record) => record.id === id);
     assert.ok(source, `缺少來源 ${id}`);
-    assert.equal(source.verificationStatus, '已驗證');
+    assert.equal(source.verificationStatus, '官方已確認');
+    assert.equal(source.sourceType, '楓星官方');
     assert.match(source.url, /^https:\/\/(?:www\.)?tw\.maplestar\.io\//);
   }
 });
@@ -133,11 +146,11 @@ test('舊版自建條目、價格與收藏可遷移且不依賴中文名稱作�
   assert.equal(validateDatabase(migrated.database, { allowTestData: true }).valid, true);
 });
 
-test('可辨識 v1 備份並遷移到 v2', () => {
+test('可辨識 v1 備份並遷移到 v3', () => {
   const result = parseImportPayload({ format: 'StarDexBackup', version: 1, entries: [], prices: [], favorites: [] }, seed);
   assert.equal(result.valid, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.database.schemaVersion, 2);
+  assert.equal(result.database.schemaVersion, SCHEMA_VERSION);
 });
 
 test('匯入時不允許自建資料覆寫內建資料', () => {
@@ -145,7 +158,7 @@ test('匯入時不允許自建資料覆寫內建資料', () => {
   incoming.monsters[0] = { ...incoming.monsters[0], name: '惡意覆寫', userCreated: true };
   const merged = mergeImportedData(seed, incoming, [], []);
   assert.equal(merged.database.monsters[0].name, '雲狐');
-  assert.ok(merged.warnings.some((warning) => warning.includes('不可用匯入資料覆寫')));
+  assert.ok(merged.warnings.some((warning) => warning.includes('不可覆寫內建條目')));
 });
 
 test('匯出的完整備份可再次通過匯入驗證', () => {
@@ -159,4 +172,186 @@ test('無效 schema version 會提供清楚錯誤', () => {
   const result = parseImportPayload({ schemaVersion: 99 }, seed);
   assert.equal(result.valid, false);
   assert.ok(result.errors[0].includes('schema'));
+});
+
+test('物品可反查怪物、BOSS 與任務來源', () => {
+  const cloudTail = seed.items.find((record) => record.id === 'item-cloud-fox-tail');
+  const alishanCoin = seed.items.find((record) => record.id === 'item-alishan-coin');
+  const strengthRing = seed.items.find((record) => record.id === 'item-strength-ring-3');
+  assert.ok(seed.monsters.some((record) => record.dropItemIds.includes(cloudTail.id)));
+  assert.ok(seed.bosses.some((record) => record.dropItemIds.includes(alishanCoin.id)));
+  assert.ok(seed.quests.some((record) => record.requiredItemIds.includes(strengthRing.id)));
+});
+
+test('官方地圖、NPC 與職業技能的新關聯閉合', () => {
+  const skyCity = seed.maps.find((record) => record.id === 'map-sky-city');
+  const thomas = seed.npcs.find((record) => record.id === 'npc-thomas');
+  const demonSlayer = seed.jobs.find((record) => record.id === 'job-demon-slayer');
+  const darkRevenge = seed.skills.find((record) => record.id === 'skill-demon-slayer-dark-revenge');
+  assert.ok(skyCity.npcIds.includes(thomas.id));
+  assert.ok(thomas.mapIds.includes(skyCity.id));
+  assert.ok(demonSlayer.skillIds.includes(darkRevenge.id));
+  assert.equal(darkRevenge.jobId, demonSlayer.id);
+});
+
+test('玩家證據可驗證目標、類型、日期與安全網址', () => {
+  const database = clone(seed);
+  database.evidence.push(createEvidenceRecord({
+    id: 'evidence-cloud-fox-hp-a',
+    targetRef: 'monsters:monster-cloud-fox',
+    field: 'HP',
+    claimValue: '遊戲畫面顯示的測試主張',
+    evidenceType: '遊戲內截圖',
+    evidenceUrl: 'https://example.com/evidence',
+    reporterAlias: '玩家甲',
+    observedAt: '2026-10-10'
+  }));
+  assert.equal(validateDatabase(database).valid, true);
+  database.evidence[0].targetRef = 'monsters:not-found';
+  const invalid = validateDatabase(database);
+  assert.equal(invalid.valid, false);
+  assert.ok(invalid.errors.some((error) => error.includes('not-found')));
+});
+
+test('同一回報者的重複證據會提出警告', () => {
+  const database = clone(seed);
+  const base = {
+    targetRef: 'monsters:monster-cloud-fox', field: 'HP', claimValue: '123', evidenceType: '玩家填寫',
+    reporterAlias: '玩家甲', observedAt: '2026-10-10'
+  };
+  database.evidence.push(createEvidenceRecord({ ...base, id: 'evidence-repeat-1' }));
+  database.evidence.push(createEvidenceRecord({ ...base, id: 'evidence-repeat-2' }));
+  const result = validateDatabase(database);
+  assert.equal(result.valid, true);
+  assert.ok(result.warnings.some((warning) => warning.includes('重複主張')));
+});
+
+test('玩家自建條目不能冒充官方，且需有已採用證據才能標示玩家驗證', () => {
+  const database = clone(seed);
+  const item = clone(database.items[0]);
+  item.id = 'item-user-verification';
+  item.name = '玩家驗證物品';
+  item.userCreated = true;
+  item.sourceIds = [];
+  item.verificationStatus = '官方已確認';
+  database.items.push(item);
+  let result = validateDatabase(database);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes('不可標示為「官方已確認」')));
+  item.verificationStatus = '玩家證據已驗證';
+  result = validateDatabase(database);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes('已採用的玩家證據')));
+  const evidence = createEvidenceRecord({ id: 'evidence-user-verification', targetRef: 'items:item-user-verification', field: '取得方式', claimValue: '遊戲內截圖可確認', evidenceType: '遊戲內截圖', reporterAlias: '玩家甲', observedAt: '2026-10-10' });
+  evidence.reviewStatus = '已採用';
+  evidence.reviewedAt = '2026-10-11T00:00:00.000Z';
+  database.evidence.push(evidence);
+  assert.equal(validateDatabase(database).valid, true);
+});
+
+test('CSV 範本可預覽並一次建立怪物、物品與地圖關聯', () => {
+  const result = parseCsvImport(makeCsvTemplate(), seed);
+  assert.equal(result.valid, true, result.errors.join('\n'));
+  assert.equal(result.previewRows.length, 3);
+  const monster = result.database.monsters.find((record) => record.id === 'monster-user-example');
+  assert.deepEqual(monster.mapIds, ['map-user-example']);
+  assert.deepEqual(monster.dropItemIds, ['item-user-example']);
+  assert.equal(monster.verificationStatus, '待驗證');
+});
+
+test('CSV 拒絕檔案內重複 ID', () => {
+  const csv = 'collection,id,name,description\nitems,item-duplicate,甲,說明\nitems,item-duplicate,乙,說明';
+  const result = parseCsvImport(csv, seed);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes('重複 ID')));
+});
+
+test('CSV 拒絕不存在的外鍵與內建 ID 覆寫', () => {
+  const missing = parseCsvImport('collection,id,name,description,mapIds\nmonsters,monster-user-bad,錯誤怪物,說明,map-not-found', seed);
+  assert.equal(missing.valid, false);
+  assert.ok(missing.errors.some((error) => error.includes('map-not-found')));
+  const protectedRecord = parseCsvImport('collection,id,name,description\nmonsters,monster-cloud-fox,覆寫雲狐,說明', seed);
+  assert.equal(protectedRecord.valid, false);
+  assert.ok(protectedRecord.errors.some((error) => error.includes('不可覆寫內建條目')));
+});
+
+test('CSV 不接受玩家自行宣告官方確認', () => {
+  const csv = 'collection,id,name,description,verificationStatus\nitems,item-user-status,玩家物品,說明,官方已確認';
+  const result = parseCsvImport(csv, seed);
+  assert.equal(result.valid, true);
+  assert.equal(result.database.items.find((record) => record.id === 'item-user-status').verificationStatus, '待驗證');
+  assert.ok(result.warnings.some((warning) => warning.includes('已改為待驗證')));
+});
+
+test('CSV 拒絕錯誤數值格式', () => {
+  const result = parseCsvImport('collection,id,name,description,hp\nmonsters,monster-user-number,數值錯誤怪物,說明,未知', seed);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes('hp 必須是非負數或留空')));
+});
+
+test('schema v2 可升級並保留自建資料、價格與來源', () => {
+  const v2 = clone(seed);
+  v2.schemaVersion = 2;
+  delete v2.evidence;
+  for (const source of v2.sources) {
+    delete source.sourceType;
+    source.verificationStatus = source.verificationStatus === '官方已確認' ? '已驗證' : source.verificationStatus;
+  }
+  for (const collection of ['monsters', 'items', 'maps', 'npcs', 'jobs', 'skills', 'quests', 'bosses', 'guides']) {
+    for (const record of v2[collection]) record.verificationStatus = record.verificationStatus === '官方已確認' ? '已驗證' : record.verificationStatus;
+  }
+  const custom = clone(v2.items[0]);
+  custom.id = 'item-user-v2-preserved';
+  custom.name = 'v2 自建物品';
+  custom.userCreated = true;
+  custom.verificationStatus = '待驗證';
+  v2.items.push(custom);
+  v2.prices.push({ id: 'price-v2-preserved', itemId: custom.id, server: '玩家服', price: 321, recordedAt: '2026-10-10T00:00:00.000Z', dataSource: '手動', notes: '', sourceId: null, userCreated: true });
+  const migrated = migrateV2Database(v2);
+  assert.equal(migrated.schemaVersion, SCHEMA_VERSION);
+  assert.ok(migrated.items.some((record) => record.id === custom.id));
+  assert.ok(migrated.prices.some((record) => record.id === 'price-v2-preserved'));
+  assert.equal(migrated.sources[0].sourceType, '楓星官方');
+  assert.equal(validateDatabase(migrated, { allowTestData: true }).valid, true);
+});
+
+test('首次載入 v2 localStorage 後收藏與價格仍保留', () => {
+  const v2 = clone(seed);
+  v2.schemaVersion = 2;
+  delete v2.evidence;
+  for (const source of v2.sources) {
+    delete source.sourceType;
+    source.verificationStatus = '已驗證';
+  }
+  for (const collection of ['monsters', 'items', 'maps', 'npcs', 'jobs', 'skills', 'quests', 'bosses', 'guides']) {
+    for (const record of v2[collection]) if (record.verificationStatus === '官方已確認') record.verificationStatus = '已驗證';
+  }
+  v2.prices.push({ id: 'price-v2-load', itemId: 'item-cloud-fox-tail', server: '玩家服', price: 999, recordedAt: '2026-10-10T00:00:00.000Z', dataSource: '手動', notes: '', sourceId: null, userCreated: true });
+  const values = new Map([
+    [LEGACY_KEYS.databaseV2, JSON.stringify(v2)],
+    [LEGACY_KEYS.favoritesV2, JSON.stringify(['monsters:monster-cloud-fox'])]
+  ]);
+  const storage = { getItem: (key) => values.has(key) ? values.get(key) : null, setItem: (key, value) => values.set(key, value) };
+  const loaded = loadAppData(seed, storage);
+  assert.equal(loaded.migration.schema, 2);
+  assert.ok(loaded.database.prices.some((record) => record.id === 'price-v2-load'));
+  assert.deepEqual(loaded.favorites, ['monsters:monster-cloud-fox']);
+  assert.ok(values.has(DATABASE_KEY));
+  assert.ok(values.has(FAVORITES_KEY));
+  assert.ok(values.has(LEGACY_KEYS.databaseV2));
+});
+
+test('統計排除測試資料並分列四種驗證狀態', () => {
+  const database = clone(seed);
+  const testItem = clone(database.items[0]);
+  testItem.id = 'item-test-stat';
+  testItem.name = '統計測試資料';
+  testItem.testData = true;
+  testItem.userCreated = true;
+  testItem.verificationStatus = '測試資料';
+  database.items.push(testItem);
+  const stats = databaseStats(database);
+  assert.equal(stats.total, stats.formalTotal + 1);
+  assert.equal(stats.statuses['測試資料'], 1);
+  assert.equal(stats.formalTotal, seed.monsters.length + seed.items.length + seed.maps.length + seed.npcs.length + seed.jobs.length + seed.skills.length + seed.quests.length + seed.bosses.length + seed.guides.length);
 });
