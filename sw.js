@@ -1,4 +1,4 @@
-const CACHE = 'stardex-offline-v2';
+const CACHE = 'stardex-offline-v2.1';
 const ASSETS = [
   './',
   './index.html',

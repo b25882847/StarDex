@@ -30,6 +30,58 @@ test('怪物、物品、地圖雙向查詢所需的穩定 ID 關聯存在', () =
   assert.ok(seed.monsters.filter((record) => record.dropItemIds.includes(item.id)).some((record) => record.id === monster.id));
 });
 
+test('新增地圖、NPC、職業、技能與攻略使用雙向穩定 ID 關聯', () => {
+  const map = seed.maps.find((record) => record.id === 'map-spiegelmann-guesthouse');
+  const npc = seed.npcs.find((record) => record.id === 'npc-brave-amis');
+  const job = seed.jobs.find((record) => record.id === 'job-shadower');
+  const skill = seed.skills.find((record) => record.id === 'skill-shadower-fatal-assassination');
+  const hayato = seed.jobs.find((record) => record.id === 'job-hayato');
+  const travelGuide = seed.guides.find((record) => record.id === 'guide-job-travel-skills');
+
+  assert.ok(map.npcIds.includes(npc.id));
+  assert.ok(npc.mapIds.includes(map.id));
+  assert.ok(job.skillIds.includes(skill.id));
+  assert.equal(skill.jobId, job.id);
+  assert.ok(hayato.trainingGuideIds.includes(travelGuide.id));
+  assert.ok(travelGuide.jobIds.includes(hayato.id));
+});
+
+test('官方查證條目保留公告精確數值並避免推算未知值', () => {
+  const skill = seed.skills.find((record) => record.id === 'skill-shadower-fatal-assassination');
+  const levelGuide = seed.guides.find((record) => record.id === 'guide-level-exp-10-20');
+  const mysteryBook = seed.items.find((record) => record.id === 'item-mystery-skill-book');
+  const chaosPinkBean = seed.bosses.find((record) => record.id === 'boss-chaos-pink-bean');
+
+  assert.match(skill.description, /1000%.*900%/);
+  assert.match(skill.description, /6 秒.*5 秒/);
+  assert.match(levelGuide.content, /Lv\.10 1,350/);
+  assert.match(levelGuide.content, /Lv\.20 13,140/);
+  assert.match(mysteryBook.description, /不可.*推算.*絕對掉落率/);
+  assert.equal(chaosPinkBean.level, null);
+  assert.deepEqual(chaosPinkBean.dropItemIds, []);
+});
+
+test('本次引用的官方來源均已完成內文核對', () => {
+  const sourceIds = [
+    'source-update-2026-04-02',
+    'source-update-2026-05-21',
+    'source-update-2026-05-28',
+    'source-update-2026-07-09',
+    'source-boss-rewards-2026-07-23',
+    'source-update-2026-08-13',
+    'source-update-2026-09-28',
+    'source-reset-schedule-2026-09-30',
+    'source-update-2026-10-08'
+  ];
+
+  for (const id of sourceIds) {
+    const source = seed.sources.find((record) => record.id === id);
+    assert.ok(source, `缺少來源 ${id}`);
+    assert.equal(source.verificationStatus, '已驗證');
+    assert.match(source.url, /^https:\/\/(?:www\.)?tw\.maplestar\.io\//);
+  }
+});
+
 test('驗證器拒絕重複 ID', () => {
   const database = clone(seed);
   database.items.push(clone(database.items[0]));
