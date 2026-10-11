@@ -1,0 +1,323 @@
+export const SCHEMA_VERSION = 2;
+
+export const COLLECTIONS = [
+  'monsters',
+  'items',
+  'maps',
+  'npcs',
+  'jobs',
+  'skills',
+  'quests',
+  'bosses',
+  'guides',
+  'prices',
+  'sources'
+];
+
+export const CATALOG_COLLECTIONS = [
+  'monsters',
+  'items',
+  'maps',
+  'npcs',
+  'jobs',
+  'skills',
+  'quests',
+  'bosses',
+  'guides'
+];
+
+export const TYPE_META = {
+  monsters: { label: '怪物圖鑑', short: '怪物', icon: '🐾', singular: '怪物' },
+  items: { label: '裝備・道具', short: '道具', icon: '⚔️', singular: '物品' },
+  maps: { label: '地圖圖鑑', short: '地圖', icon: '🗺️', singular: '地圖' },
+  npcs: { label: 'NPC 索引', short: 'NPC', icon: '🧑‍🌾', singular: 'NPC' },
+  jobs: { label: '職業圖鑑', short: '職業', icon: '🛡️', singular: '職業' },
+  skills: { label: '技能圖鑑', short: '技能', icon: '✨', singular: '技能' },
+  quests: { label: '任務查詢', short: '任務', icon: '📜', singular: '任務' },
+  bosses: { label: 'BOSS 資料', short: 'BOSS', icon: '👑', singular: 'BOSS' },
+  guides: { label: '練等・攻略', short: '攻略', icon: '🧭', singular: '攻略' },
+  prices: { label: '楓幣行情', short: '價格', icon: '💰', singular: '價格' },
+  sources: { label: '資料來源', short: '來源', icon: '🔗', singular: '來源' }
+};
+
+export const VERIFICATION_STATUSES = ['已驗證', '部分驗證', '待驗證', '測試資料'];
+
+export const REFERENCE_RULES = {
+  monsters: {
+    mapIds: { collection: 'maps', many: true },
+    dropItemIds: { collection: 'items', many: true },
+    sourceIds: { collection: 'sources', many: true }
+  },
+  items: {
+    sourceIds: { collection: 'sources', many: true }
+  },
+  maps: {
+    adjacentMapIds: { collection: 'maps', many: true },
+    monsterIds: { collection: 'monsters', many: true },
+    npcIds: { collection: 'npcs', many: true },
+    sourceIds: { collection: 'sources', many: true }
+  },
+  npcs: {
+    mapIds: { collection: 'maps', many: true },
+    sourceIds: { collection: 'sources', many: true }
+  },
+  jobs: {
+    skillIds: { collection: 'skills', many: true },
+    trainingGuideIds: { collection: 'guides', many: true },
+    sourceIds: { collection: 'sources', many: true }
+  },
+  skills: {
+    jobId: { collection: 'jobs', many: false, optional: true },
+    prerequisiteSkillIds: { collection: 'skills', many: true },
+    sourceIds: { collection: 'sources', many: true }
+  },
+  quests: {
+    npcIds: { collection: 'npcs', many: true },
+    prerequisiteQuestIds: { collection: 'quests', many: true },
+    requiredItemIds: { collection: 'items', many: true },
+    rewardItemIds: { collection: 'items', many: true },
+    sourceIds: { collection: 'sources', many: true }
+  },
+  bosses: {
+    entryMapIds: { collection: 'maps', many: true },
+    requiredQuestIds: { collection: 'quests', many: true },
+    dropItemIds: { collection: 'items', many: true },
+    sourceIds: { collection: 'sources', many: true }
+  },
+  guides: {
+    jobIds: { collection: 'jobs', many: true },
+    mapIds: { collection: 'maps', many: true },
+    itemIds: { collection: 'items', many: true },
+    sourceIds: { collection: 'sources', many: true }
+  },
+  prices: {
+    itemId: { collection: 'items', many: false },
+    sourceId: { collection: 'sources', many: false, optional: true }
+  },
+  sources: {}
+};
+
+const ID_PATTERN = /^[a-z0-9][a-z0-9._:-]{1,119}$/i;
+
+export function createEmptyDatabase() {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    meta: {
+      product: 'MapleStar',
+      locale: 'zh-Hant',
+      datasetVersion: 'user',
+      updatedAt: new Date().toISOString(),
+      notice: '僅限楓星 MapleStar 資料。'
+    },
+    ...Object.fromEntries(COLLECTIONS.map((name) => [name, []]))
+  };
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasText(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function pushError(errors, path, message) {
+  errors.push(`${path}：${message}`);
+}
+
+function isNullableNumber(value) {
+  return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+}
+
+function validateStringArray(value, path, errors) {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+    pushError(errors, path, '必須是字串陣列');
+  }
+}
+
+function validateRecordShape(collection, record, path, errors) {
+  const nullableNumberFields = {
+    monsters: ['level', 'hp', 'mp', 'experience'],
+    items: ['requiredLevel'],
+    maps: ['recommendedLevel'],
+    skills: ['maxLevel'],
+    quests: ['requiredLevel'],
+    bosses: ['level']
+  }[collection] || [];
+  for (const field of nullableNumberFields) {
+    if (!isNullableNumber(record[field])) pushError(errors, `${path}.${field}`, '必須是非負數或 null');
+  }
+
+  const stringFields = {
+    monsters: ['description'],
+    items: ['category', 'acquisition', 'tradeInfo', 'description'],
+    maps: ['region', 'description'],
+    npcs: ['description'],
+    jobs: ['features'],
+    skills: ['description', 'recommendedBuild'],
+    quests: ['description', 'rewardsText'],
+    bosses: ['description', 'entryConditions', 'respawnOrLimits'],
+    guides: ['guideType', 'content'],
+    prices: ['server', 'recordedAt', 'dataSource', 'notes'],
+    sources: ['name', 'url', 'version', 'checkedAt', 'verificationStatus', 'notes']
+  }[collection] || [];
+  for (const field of stringFields) {
+    if (typeof record[field] !== 'string') pushError(errors, `${path}.${field}`, '必須是字串');
+  }
+
+  const stringArrayFields = {
+    monsters: ['elements'],
+    jobs: ['advancementStages', 'weapons']
+  }[collection] || [];
+  for (const field of stringArrayFields) validateStringArray(record[field], `${path}.${field}`, errors);
+
+  if (collection === 'items' && !isPlainObject(record.stats)) pushError(errors, `${path}.stats`, '必須是物件');
+  if (collection === 'guides') {
+    if (!isPlainObject(record.levelRange)) {
+      pushError(errors, `${path}.levelRange`, '必須是物件');
+    } else {
+      if (!isNullableNumber(record.levelRange.min)) pushError(errors, `${path}.levelRange.min`, '必須是非負數或 null');
+      if (!isNullableNumber(record.levelRange.max)) pushError(errors, `${path}.levelRange.max`, '必須是非負數或 null');
+    }
+  }
+  if (collection === 'prices' && typeof record.userCreated !== 'boolean') pushError(errors, `${path}.userCreated`, '必須是布林值');
+  if (!['prices', 'sources'].includes(collection)) {
+    if (typeof record.testData !== 'boolean') pushError(errors, `${path}.testData`, '必須是布林值');
+    if (typeof record.userCreated !== 'boolean') pushError(errors, `${path}.userCreated`, '必須是布林值');
+  }
+}
+
+function validateBasicRecord(collection, record, index, errors) {
+  const path = `${collection}[${index}]`;
+  if (!isPlainObject(record)) {
+    pushError(errors, path, '必須是物件');
+    return;
+  }
+  if (!hasText(record.id) || !ID_PATTERN.test(record.id)) {
+    pushError(errors, `${path}.id`, '必須是 2–120 字元的穩定 ID，只能使用英數、點、底線、冒號或連字號');
+  }
+  if (collection === 'prices') {
+    if (!hasText(record.itemId)) pushError(errors, `${path}.itemId`, '價格紀錄必須指定物品 ID');
+    if (!hasText(record.server)) pushError(errors, `${path}.server`, '價格紀錄必須指定伺服器');
+    if (!Number.isSafeInteger(Number(record.price)) || Number(record.price) <= 0) {
+      pushError(errors, `${path}.price`, '必須是大於 0 的安全整數');
+    }
+    if (!hasText(record.recordedAt) || Number.isNaN(Date.parse(record.recordedAt))) {
+      pushError(errors, `${path}.recordedAt`, '必須是有效日期時間');
+    }
+  } else if (collection === 'sources') {
+    if (!hasText(record.name)) pushError(errors, `${path}.name`, '來源名稱不可空白');
+    if (!hasText(record.url)) pushError(errors, `${path}.url`, '來源 URL 不可空白');
+    try {
+      const url = new URL(record.url);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('protocol');
+    } catch {
+      pushError(errors, `${path}.url`, '只接受 http 或 https 網址');
+    }
+  } else if (!hasText(record.name)) {
+    pushError(errors, `${path}.name`, '名稱不可空白');
+  }
+  validateRecordShape(collection, record, path, errors);
+  if (collection !== 'prices' && record.verificationStatus !== undefined && !VERIFICATION_STATUSES.includes(record.verificationStatus)) {
+    pushError(errors, `${path}.verificationStatus`, `只接受 ${VERIFICATION_STATUSES.join('、')}`);
+  }
+}
+
+export function validateDatabase(database, options = {}) {
+  const errors = [];
+  const warnings = [];
+  if (!isPlainObject(database)) {
+    return { valid: false, errors: ['根節點：必須是 JSON 物件'], warnings };
+  }
+  if (database.schemaVersion !== SCHEMA_VERSION) {
+    errors.push(`schemaVersion：需要版本 ${SCHEMA_VERSION}，收到 ${String(database.schemaVersion ?? '未提供')}`);
+  }
+  if (!isPlainObject(database.meta)) errors.push('meta：必須是物件');
+
+  const ids = {};
+  const globalIds = new Map();
+  for (const collection of COLLECTIONS) {
+    const records = database[collection];
+    if (!Array.isArray(records)) {
+      errors.push(`${collection}：必須是陣列`);
+      ids[collection] = new Set();
+      continue;
+    }
+    ids[collection] = new Set();
+    records.forEach((record, index) => {
+      validateBasicRecord(collection, record, index, errors);
+      if (!record || typeof record.id !== 'string') return;
+      if (ids[collection].has(record.id)) errors.push(`${collection}：發現重複 ID「${record.id}」`);
+      ids[collection].add(record.id);
+      if (globalIds.has(record.id)) {
+        warnings.push(`ID「${record.id}」同時存在於 ${globalIds.get(record.id)} 與 ${collection}；建議使用類型前綴`);
+      } else {
+        globalIds.set(record.id, collection);
+      }
+      if (record.testData === true && record.verificationStatus !== '測試資料') {
+        errors.push(`${collection}.${record.id}：testData 為 true 時 verificationStatus 必須是「測試資料」`);
+      }
+      if (record.verificationStatus === '測試資料' && record.testData !== true) {
+        errors.push(`${collection}.${record.id}：「測試資料」必須明確設定 testData: true`);
+      }
+    });
+  }
+
+  for (const [collection, fields] of Object.entries(REFERENCE_RULES)) {
+    const records = Array.isArray(database[collection]) ? database[collection] : [];
+    records.forEach((record, index) => {
+      if (!isPlainObject(record)) return;
+      for (const [field, rule] of Object.entries(fields)) {
+        const value = record[field];
+        const path = `${collection}[${index}].${field}`;
+        if (rule.many) {
+          if (!Array.isArray(value)) {
+            pushError(errors, path, '必須是 ID 陣列');
+            continue;
+          }
+          const seen = new Set();
+          for (const targetId of value) {
+            if (!hasText(targetId)) {
+              pushError(errors, path, '包含空白或非字串 ID');
+              continue;
+            }
+            if (seen.has(targetId)) pushError(errors, path, `包含重複關聯「${targetId}」`);
+            seen.add(targetId);
+            if (!ids[rule.collection]?.has(targetId)) {
+              pushError(errors, path, `找不到 ${rule.collection} 的「${targetId}」`);
+            }
+          }
+        } else {
+          if ((value === null || value === undefined || value === '') && rule.optional) continue;
+          if (!hasText(value)) {
+            pushError(errors, path, '必須是有效 ID');
+          } else if (!ids[rule.collection]?.has(value)) {
+            pushError(errors, path, `找不到 ${rule.collection} 的「${value}」`);
+          }
+        }
+      }
+    });
+  }
+
+  if (database.meta?.product && database.meta.product !== 'MapleStar') {
+    errors.push('meta.product：本專案只接受「MapleStar」資料');
+  }
+  if (!options.allowTestData) {
+    const count = COLLECTIONS.reduce((sum, collection) => sum + (database[collection] || []).filter((record) => record?.testData).length, 0);
+    if (count) warnings.push(`匯入內容含 ${count} 筆明確標示的測試資料，介面會與正式資料分開標示`);
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+export function recordRef(collection, id) {
+  return `${collection}:${id}`;
+}
+
+export function parseRecordRef(value) {
+  const separator = String(value || '').indexOf(':');
+  if (separator < 1) return null;
+  const collection = value.slice(0, separator);
+  const id = value.slice(separator + 1);
+  return CATALOG_COLLECTIONS.includes(collection) && id ? { collection, id } : null;
+}

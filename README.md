@@ -1,47 +1,86 @@
-# 星圖鑑 StarDex（非官方楓星玩家資料站）
+# 星圖鑑 StarDex｜楓星全功能圖鑑
 
-手機與電腦通用的 PWA 網頁 App 初版，不需 npm、不需資料庫即可執行。
+StarDex 是只針對「楓星 MapleStar」的繁體中文玩家資料庫。它是純 HTML、CSS、JavaScript PWA，不需後端、帳號、npm build 或付費服務，可直接用 VS Code Live Server 執行。
 
-## 現有功能
+> 非官方玩家工具，與 Nexon、MapleStar 營運方無關。未取得可信來源的數值會保持空白或標示「待驗證」，不會把 Artale、楓之谷正式服或其他版本資料當成楓星資料。
 
-- 7 類資料：怪物、裝備道具、地圖、職業技能、任務、BOSS、練等攻略
-- 全站關鍵字查詢、分類篩選、條目詳情、交叉關聯、收藏
-- 自建／編輯／刪除條目，以及來源網址欄位
-- 楓幣行情手動記錄、中位數整理、紀錄刪除
-- JSON 備份與匯入合併
-- iPhone「加入主畫面」與離線載入（需先部署在 HTTPS 網站）
-- 23 筆以官方公告為基礎的示範條目（**不是完整遊戲資料庫**）
+## 功能
 
-## 如何在本機啟動
+- 全站搜尋：名稱、等級、分類、說明與關聯名稱皆可搜尋，另有類型、驗證狀態、等級範圍與排序。
+- 關聯圖鑑：怪物、物品、地圖、NPC、職業、技能、任務、BOSS、攻略皆使用穩定 ID。
+- 雙向查詢：怪物可查掉落物；物品會反向列出來源怪物；地圖會列出怪物與 NPC。
+- 職業與攻略：轉職階段、武器、技能、前置技能、推薦配點、任務與攻略欄位。
+- 楓幣行情：手動輸入物品 ID、伺服器、價格、時間、資料來源與備註，依物品與伺服器顯示中位數和歷史。
+- 收藏與自建資料：localStorage 持久保存，可新增、編輯、刪除並支援所有圖鑑類型。
+- JSON 管理：匯出完整 schema v2 備份；匯入前驗證版本、欄位、重複 ID、外鍵與測試資料標示。
+- 舊資料遷移：第一次啟動會讀取 `stardex.user.v1`、`stardex.prices.v1`、`stardex.fav.v1`，轉成 schema v2；舊 key 不會刪除。
+- PWA：HTTPS 部署後可加入 iPhone 主畫面，已快取 HTML、CSS、JavaScript 與種子資料供離線使用。
 
-### Windows（你已安裝 Node.js）
+## 用 Live Server 執行
 
-在此資料夾使用終端機：
+1. 在 VS Code 開啟本資料夾。
+2. 在 `index.html` 上按右鍵，選擇 **Open with Live Server**。
+3. 瀏覽器應開啟類似 `http://127.0.0.1:5500/index.html` 的網址。
+
+也可以使用任何靜態伺服器，例如：
 
 ```powershell
 npx serve .
 ```
 
-瀏覽器打開終端機顯示的網址。也可以直接用瀏覽器開啟 `index.html`，但離線 PWA 安裝需要 HTTPS 站點。
+請不要直接用 `file://` 開啟，因為瀏覽器會阻擋模組與 JSON 載入；這不是 StarDex 資料錯誤。
 
-### 免費部署 GitHub Pages
+## 資料結構
 
-1. 建立 GitHub Repository，例如 `stardex`。
-2. 把本資料夾內所有檔案上傳到 Repository 根目錄。
-3. 在 GitHub Repository 的 `Settings` → `Pages`，設 `Deploy from a branch` → `main` → `/ (root)`。
-4. 發布完成後在 iPhone Safari 開啟 `https://<你的帳號>.github.io/stardex/`。
-5. 點 Safari 分享圖示 →「加入主畫面」。
+主要檔案：
 
-**注意**：本機資料只儲存在同一瀏覽器的 `localStorage`。不同裝置之間不會自動同步；請定期用「我的 → 匯出完整備份」。
+- `data/maplestar.seed.json`：內建楓星種子資料與來源，`schemaVersion: 2`。
+- `js/schema.js`：集合定義、驗證狀態、外鍵規則與完整資料驗證。
+- `js/storage.js`：localStorage、v1 → v2 遷移、匯入合併與完整備份。
+- `js/app.js`：搜尋、分類、詳情、關聯、收藏、價格、自建資料與資料管理介面。
+- `styles.css`：保留原 StarDex 色彩與版型，加入桌面、平板與 iPhone 響應式樣式。
+- `sw.js`：PWA 離線快取。
 
-## 資料準確性
+資料庫集合：`monsters`、`items`、`maps`、`npcs`、`jobs`、`skills`、`quests`、`bosses`、`guides`、`prices`、`sources`。
 
-目前僅收錄有官方公告支撐的內容。不知道的怪物等級、掉落率、完整裝備能力、物價不會虛構。若要變成真正完整的「全部都有」圖鑑，需要額外建立資料蒐集、標準化、玩家驗證、版本更新機制。
+關聯一律使用 ID，例如：
 
-原始參考來源：
-- https://www.tw.maplestar.io/news/notices/announcements/459f794f-f2a8-4d68-ad22-463c5570d341
-- https://tw.maplestar.io/news/updates/50ff2803-41c4-4d21-a2b9-ac080b1d117f
-- https://tw.maplestar.io/news/updates/9f13e677-3c09-4ea4-9ee9-4cd8d6d183a3
-- https://ww.tw.maplestar.io/news/updates/1f11fb92-f058-47bc-8158-21dd8305f14a
+```json
+{
+  "id": "monster-cloud-fox",
+  "dropItemIds": ["item-cloud-fox-tail"],
+  "mapIds": ["map-mushroom-shrine-vicinity"],
+  "sourceIds": ["source-update-2026-05-21"]
+}
+```
 
-StarDex 是非官方玩家工具，與 Nexon、MapleStar 營運方無關。不自動讀取玩家遊戲帳號、不使用遊戲封包或外掛。遊戲名稱、商標與內容屬權利人。
+空值代表未知，不代表 0。測試資料必須同時設定 `testData: true` 與 `verificationStatus: "測試資料"`，介面會以不同底色與標籤呈現。
+
+## 備份與匯入
+
+在「我的」→「資料工具」：
+
+- **匯出完整備份**：包含 schema v2 資料庫、價格和收藏。
+- **選擇 JSON**：先顯示驗證結果；有錯誤時不會寫入 localStorage。
+- 合併時以 ID 更新自建資料，內建資料不允許被匯入檔覆寫。
+- 原 StarDex v1 備份仍可匯入並自動遷移。
+
+## 測試
+
+需要 Node.js 18 以上：
+
+```powershell
+npm test
+```
+
+測試涵蓋內建資料驗證、穩定 ID 關聯、重複 ID、無效外鍵、測試資料隔離、v1 遷移、內建資料防覆寫與備份再匯入。
+
+## 還原修改前版本
+
+本次升級前已建立本機 Git 基準 commit：
+
+```text
+a502ad0 chore: baseline before MapleStar database upgrade
+```
+
+請先自行備份目前修改，再以 Git 檢視或還原該 commit。不要用會清除未提交工作的指令，除非你確定不需要目前變更。

@@ -1,7 +1,8 @@
 {
-  "name": "星圖鑑 StarDex｜楓星玩家百科",
+  "id": "./",
+  "name": "星圖鑑 StarDex｜楓星全功能圖鑑",
   "short_name": "星圖鑑",
-  "description": "非官方楓星玩家圖鑑與攻略、行情筆記",
+  "description": "楓星 MapleStar 專用的關聯式圖鑑、攻略、收藏與行情筆記",
   "lang": "zh-Hant",
   "start_url": "./index.html",
   "scope": "./",
